@@ -1,36 +1,27 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Pong / AI
 
-## Getting Started
+A Next.js, React, and TypeScript Pong demo using Bun. The human controls the left paddle; the right paddle is stationary until model integration is added.
 
-First, run the development server:
+## Development
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+Use the Bun version declared in `package.json`.
+
+```sh
+bun install
+bun run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000. Use W/S or the arrow keys after focusing the court, move the mouse over the court, or drag on touch screens. Space starts or pauses a match. Matches are first to seven, with pause, resume, and reset controls. Switching away from the window pauses play.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```sh
+bun run lint
+bun run build
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Game and model boundary
 
-## Learn More
+- `lib/game.ts` contains the pure, immutable simulation. The client advances it in fixed 1/120-second steps, independently of display size and frame rate.
+- `app/pong-game.tsx` owns input and rendering. `modelAction` currently holds `"stay"`; its value is passed to `stepGame` as the right paddle action each step.
+- `lib/model-controller.ts` defines `ModelController` and `getModelObservation(state)`. Observations are detached JSON-serializable snapshots containing court geometry, ball position/velocity, paddle centers, score, phase, elapsed seconds, and serve delay. Coordinates are court units with the origin at the top left; positive Y points down. Actions are `"up"`, `"down"`, or `"stay"`, applied at the configured paddle speed.
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The future integration should send observations to a server endpoint at a bounded decision rate, then write each returned action to `modelAction.current`. Keep rendering independent of network latency, allow only one request in flight, and cancel/discard stale responses on pause, reset, or unmount. Return to `"stay"` if a request fails or its action expires. Provider credentials and model calls belong on the server. No provider, endpoint, request loop, or credentials are configured yet.
