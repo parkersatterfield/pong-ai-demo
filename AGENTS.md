@@ -3,7 +3,7 @@
 ## Project context
 
 - Build a simple web demo where a user plays Pong against an AI model.
-- The likely MVP direction is a System 1 model using the ChatGPT Decisions API; treat the model and API choice as tentative until confirmed.
+- Use the OpenAI Decisions API for the initial model integration. Keep the observation/action contract independent of the provider so other models can be added.
 - Code quality matters as much as the working demo. Keep code simple, precise, readable, and easy to maintain.
 
 ## Required engineering skills

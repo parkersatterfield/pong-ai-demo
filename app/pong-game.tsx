@@ -2,6 +2,9 @@
 
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { COURT, clampPaddle, createGame, stepGame, type PaddleAction } from "@/lib/game";
+import { MODELS, getModelObservation } from "@/lib/model-controller";
+import { createRemoteController } from "@/lib/request-model-action";
+import { runModelController, type ModelRetryState } from "@/lib/run-model-controller";
 
 const STEP = 1 / 120;
 
@@ -11,23 +14,67 @@ export default function PongGame() {
   const court = useRef<SVGSVGElement>(null);
   const keys = useRef(new Set<string>());
   const pointerY = useRef<number | null>(null);
-  // Future model responses write here; the simulation consumes the latest action.
   const modelAction = useRef<PaddleAction>("stay");
+  const modelSession = useRef<(() => void) | null>(null);
+  const modelRetries = useRef<Record<string, ModelRetryState>>({});
+  const [modelId, setModelId] = useState<string>(MODELS[0].id);
+  const [modelError, setModelError] = useState<string | null>(null);
+  const [modelNotice, setModelNotice] = useState<string | null>(null);
+
+  function resetRetryBudget(id: string) {
+    const retry = modelRetries.current[id];
+    if (retry) {
+      retry.failures = 0;
+      retry.startedAt = null;
+    }
+  }
+
+  function stopModel() {
+    modelSession.current?.();
+    modelAction.current = "stay";
+  }
 
   function togglePlay() {
+    stopModel();
+    setModelError(null);
+    setModelNotice(null);
     const current = game.current;
+    if (current.phase !== "playing") resetRetryBudget(modelId);
     if (current.phase === "finished") game.current = createGame();
     game.current = { ...game.current, phase: current.phase === "playing" ? "paused" : "playing" };
     setView(game.current);
   }
 
   function reset() {
+    stopModel();
+    setModelError(null);
+    setModelNotice(null);
+    resetRetryBudget(modelId);
     game.current = createGame();
-    modelAction.current = "stay";
     pointerY.current = null;
     keys.current.clear();
     setView(game.current);
   }
+
+  useEffect(() => {
+    if (view.phase !== "playing" || !modelId) return;
+
+    const retry = modelRetries.current[modelId] ??= { failures: 0, startedAt: null, nextRequestAt: 0 };
+    const stop = runModelController({
+      controller: createRemoteController(modelId),
+      observe: () => getModelObservation(game.current),
+      onAction: (action) => { modelAction.current = action; },
+      onStatus: setModelNotice,
+      retry,
+      onError: (message) => {
+        setModelError(message);
+        game.current = { ...game.current, phase: "paused" };
+        setView(game.current);
+      },
+    });
+    modelSession.current = stop;
+    return stop;
+  }, [modelId, view.phase, view.score.left, view.score.right]);
 
   useEffect(() => {
     let frame: number;
@@ -44,10 +91,15 @@ export default function PongGame() {
         }
         const up = keys.current.has("w") || keys.current.has("arrowup");
         const down = keys.current.has("s") || keys.current.has("arrowdown");
+        const previousScore = game.current.score;
         game.current = stepGame(game.current, {
           left: up === down ? "stay" : up ? "up" : "down",
-          right: modelAction.current,
+          right: game.current.ball.vx > 0 && game.current.serveIn === 0 ? modelAction.current : "stay",
         }, STEP);
+        if (game.current.score !== previousScore) {
+          modelSession.current?.();
+          pointerY.current = null;
+        }
         accumulator -= STEP;
       }
       setView(game.current);
@@ -55,6 +107,7 @@ export default function PongGame() {
     }
 
     function pause() {
+      modelSession.current?.();
       keys.current.clear();
       pointerY.current = null;
       if (game.current.phase === "playing") {
@@ -91,11 +144,25 @@ export default function PongGame() {
         <span className="build-label"><span className="status-dot" /> TECHNICAL DEMO <span className="version">v0.1</span></span>
       </header>
 
+      <div className="model-settings">
+        <label htmlFor="opponent-model">Opponent</label>
+        <select id="opponent-model" value={modelId} onChange={(event) => {
+          stopModel();
+          setModelError(null);
+          setModelNotice(null);
+          resetRetryBudget(event.target.value);
+          setModelId(event.target.value);
+        }}>
+          <option value="">Disabled (stationary paddle)</option>
+          {MODELS.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
+        </select>
+      </div>
+
       <section className="arena" aria-label="Pong game">
         <div className="scoreboard">
           <div className="player player-human"><span className="player-symbol">↗</span><div><h2>You</h2><span>HUMAN · LEFT PADDLE</span></div></div>
           <div className="scores" aria-label={`You ${view.score.left}, opponent ${view.score.right}`}><span>{String(view.score.left).padStart(2, "0")}</span><span className="score-divider">:</span><span>{String(view.score.right).padStart(2, "0")}</span></div>
-          <div className="player player-model"><div><h2>Model <span className="offline-tag">OFFLINE</span></h2><span>AI · RIGHT PADDLE</span></div><span className="player-symbol">✳</span></div>
+          <div className="player player-model"><div><h2>Model <span className="offline-tag">{modelError ? "ERROR" : !modelId ? "OFFLINE" : playing ? "ACTIVE" : "IDLE"}</span></h2><span>AI · RIGHT PADDLE</span></div><span className="player-symbol">✳</span></div>
         </div>
 
         <div className="court-wrap">
@@ -152,7 +219,7 @@ export default function PongGame() {
 
       <section className="below-court" aria-label="Controls and opponent status">
         <div className="controls"><span className="section-label">CONTROLS</span><p><span><kbd>W</kbd><kbd>S</kbd> <span className="muted">or</span> <kbd>↑</kbd><kbd>↓</kbd></span><span>Move left paddle</span><span className="control-separator" /><span>Mouse movement or touch drag</span></p></div>
-        <div className="model-note"><span className="note-icon" aria-hidden="true">✳</span><div><h3>Model control disabled</h3><p>The right paddle is stationary.</p></div></div>
+        <div className="model-note" role="status"><span className="note-icon" aria-hidden="true">✳</span><div><h3>{modelError ? "Model request failed" : modelNotice ? "Model status" : modelId ? "Model control enabled" : "Model control disabled"}</h3><p>{modelError ?? modelNotice ?? (modelId ? "Game state is sent only while playing." : "The right paddle is stationary.")}</p></div></div>
       </section>
     </main>
   );

@@ -11,11 +11,25 @@ export interface ModelObservation {
   serveIn: number;
 }
 
-// A future server endpoint implements this transport-independent contract.
+export const MODEL_ACTION_MS = 200;
+export const MODEL_REQUEST_TIMEOUT_MS = 1000;
+export const MODEL_DECISION_INTERVAL_MS = 500;
+export const MODEL_OBSERVATION_MAX_AGE_MS = 500;
+
+// Add model entries here; provider implementations stay on the server.
+export const MODELS = [
+  { id: "openai-decisions", label: "OpenAI Decisions / gpt-6-luna", provider: "openai-decisions", model: "gpt-6-luna" },
+] as const;
+
+// All providers implement the same observation-to-action contract.
 export type ModelController = (
   observation: ModelObservation,
   signal: AbortSignal,
 ) => Promise<PaddleAction>;
+
+export function isPaddleAction(value: unknown): value is PaddleAction {
+  return value === "up" || value === "down" || value === "stay";
+}
 
 export function getModelObservation(state: GameState): ModelObservation {
   return {

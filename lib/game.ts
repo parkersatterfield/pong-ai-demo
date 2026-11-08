@@ -96,6 +96,7 @@ export function stepGame(
     return {
       ...next,
       score,
+      paddles: { left: COURT.height / 2, right: COURT.height / 2 },
       phase: score[scorer] >= COURT.winningScore ? "finished" : "playing",
       ball: serve(scorer === "left" ? 1 : -1),
       serveIn: 0.8,
