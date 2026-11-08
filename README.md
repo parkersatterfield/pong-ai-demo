@@ -79,7 +79,7 @@ interceptY = round(court.ballRadius + Math.min(foldedY, period - foldedY));
 
 This handles repeated top and bottom reflections without simulating every bounce. It runs only when the ball moves toward the right paddle and has not passed the contact plane. Otherwise, the intercept is null. The prediction assumes constant velocity apart from wall reflections; a later paddle hit changes the trajectory.
 
-The engine does not replace the model's target with this prediction. After the adapter returns a target, [`stepGame`](lib/game.ts) moves toward it by at most one step's travel distance:
+In model modes, the engine does not replace the model's target with this prediction. After the adapter returns a target, [`stepGame`](lib/game.ts) moves toward it by at most one step's travel distance:
 
 ```ts
 right: actions.right === null ? state.paddles.right : clampPaddle(
@@ -88,6 +88,8 @@ right: actions.right === null ? state.paddles.right : clampPaddle(
 ```
 
 Here, `distance` is `COURT.paddleSpeed * dt`. The paddle stops at the destination without overshooting; a null target leaves it stationary. Return angles come from where the ball strikes the paddle, rather than a separate model-selected shot action.
+
+Select **NO MODEL (game engine)** in the Opponent dropdown to play against a local deterministic opponent without API requests or credentials. It uses the same wall-reflected intercept calculation each physics step, clamps the target to the legal paddle-center range, and returns toward center when the ball moves away. The normal paddle speed limit still applies, and the paddle stays still during serves. The existing **Disabled (stationary paddle)** option remains available.
 
 ## Architecture and decision timing
 
