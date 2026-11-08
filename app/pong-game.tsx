@@ -24,7 +24,7 @@ export default function PongGame() {
   const modelTargetY = useRef<number | null>(null);
   const modelSession = useRef<(() => void) | null>(null);
   const modelRetries = useRef<Record<string, ModelRetryState>>({});
-  const [modelId, setModelId] = useState<string>(MODELS[0].id);
+  const [modelId, setModelId] = useState<string>("no-model");
   const engineControlled = modelId === "no-model";
   const [modelError, setModelError] = useState<string | null>(null);
   const [modelNotice, setModelNotice] = useState<string | null>(null);
@@ -69,7 +69,7 @@ export default function PongGame() {
   }
 
   useEffect(() => {
-    if (view.phase !== "playing" || !modelId || engineControlled) return;
+    if (view.phase !== "playing" || engineControlled) return;
 
     const retry = modelRetries.current[modelId] ??= { failures: 0, startedAt: null, nextRequestAt: 0 };
     const stop = runModelController({
@@ -150,7 +150,7 @@ export default function PongGame() {
   const buttonLabel = playing ? "Pause game" : view.phase === "paused" ? "Resume game" : finished ? "Play again" : "Start game";
   const status = playing ? "In play" : view.phase === "paused" ? "Paused" : finished ? "Match complete" : "Ready to play";
 
-  const modelLabel = engineControlled ? "NO MODEL / Game engine" : MODELS.find((model) => model.id === modelId)?.label ?? "Model disabled";
+  const modelLabel = engineControlled ? "NO MODEL / Game engine" : MODELS.find((model) => model.id === modelId)?.label;
   const engineTarget = engineControlled ? getEngineTarget(view) : null;
   const decision = engineControlled ? engineTarget === null ? null : { targetY: engineTarget, at: view.elapsed } : modelDecision;
   const difficultyLabel = DIFFICULTIES.find(({ ballSpeed }) => ballSpeed === view.ballSpeed)?.label;
@@ -214,7 +214,6 @@ export default function PongGame() {
                   resetRetryBudget(event.target.value);
                   setModelId(event.target.value);
                 }}>
-                  <option value="">Disabled (stationary paddle)</option>
                   <option value="no-model">NO MODEL (game engine)</option>
                   {MODELS.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
                 </select>
@@ -228,8 +227,8 @@ export default function PongGame() {
                   {DIFFICULTIES.map((difficulty) => <option key={difficulty.id} value={difficulty.ballSpeed}>{difficulty.label}</option>)}
                 </select>
                 <p className="decision-rate">
-                  {engineControlled ? "Engine control · No API requests" : modelId ? `Up to ${1000 / MODEL_DECISION_INTERVAL_MS} decisions/sec · ${MODEL_DECISION_INTERVAL_MS} ms interval` : "Model decisions disabled"}
-                  {engineControlled ? <span>Uses the predicted intercept each physics step; returns to center when the ball moves away.</span> : modelId && <span>While playing, in either ball direction; backoff may reduce the rate.</span>}
+                  {engineControlled ? "Engine control · No API requests" : `Up to ${1000 / MODEL_DECISION_INTERVAL_MS} decisions/sec · ${MODEL_DECISION_INTERVAL_MS} ms interval`}
+                  {engineControlled ? <span>Uses the predicted intercept each physics step; returns to center when the ball moves away.</span> : <span>While playing, in either ball direction; backoff may reduce the rate.</span>}
                 </p>
               </div>
               <p className="controls"><kbd>↑</kbd> <kbd>↓</kbd> or <kbd>W</kbd> <kbd>S</kbd> move · <kbd>space</kbd> / <kbd>esc</kbd> pause</p>
@@ -243,13 +242,13 @@ export default function PongGame() {
         </div>
 
         <section className="decision-panel" aria-label={engineControlled ? "Live engine target" : "Live model decision"}>
-          <div className="decision-heading"><span className={`status-dot ${playing && modelId ? "live" : ""}`} />{engineControlled ? "Engine target" : "Model decision"} <span>{engineControlled ? "Every physics step" : modelId ? `${MODEL_DECISION_INTERVAL_MS} ms interval` : "Disabled"}</span></div>
+          <div className="decision-heading"><span className={`status-dot ${playing ? "live" : ""}`} />{engineControlled ? "Engine target" : "Model decision"} <span>{engineControlled ? "Every physics step" : `${MODEL_DECISION_INTERVAL_MS} ms interval`}</span></div>
           <div className="decision-values">
             {responseMs !== null && <span>Response {responseMs} ms</span>}
-            <strong>{decision && playing ? `Target Y ${decision.targetY.toFixed(2)}` : !modelId ? "Stationary paddle" : playing ? view.serveIn > 0 ? "Serving" : "Awaiting decision" : "Inactive"}</strong>
+            <strong>{decision && playing ? `Target Y ${decision.targetY.toFixed(2)}` : playing ? view.serveIn > 0 ? "Serving" : "Awaiting decision" : "Inactive"}</strong>
             {decision && playing && <><span>Paddle Y {view.paddles.right.toFixed(2)}</span><span>{targetMotion}</span>{!engineControlled && <span>Selected at {decision.at.toFixed(1)} s</span>}</>}
           </div>
-          <p role="status">{modelError ?? modelNotice ?? (decision && playing ? "Dashed marker shows the selected destination." : playing && modelId ? "Waiting for an accepted model target." : status)}</p>
+          <p role="status">{modelError ?? modelNotice ?? (decision && playing ? "Dashed marker shows the selected destination." : playing ? "Waiting for an accepted model target." : status)}</p>
         </section>
       </section>
     </main>

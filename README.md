@@ -112,7 +112,7 @@ right: actions.right === null ? state.paddles.right : clampPaddle(
 
 Here, `distance` is `COURT.paddleSpeed * dt`. The paddle stops at the destination without overshooting; a null target leaves it stationary. Return angles come from where the ball strikes the paddle, rather than a separate model-selected shot action.
 
-Select **NO MODEL (game engine)** in the Opponent dropdown to play against a local deterministic opponent without API requests or credentials. It uses the same wall-reflected intercept calculation each physics step, clamps the target to the legal paddle-center range, and returns toward center when the ball moves away. The normal paddle speed limit still applies, and the paddle stays still during serves. The existing **Disabled (stationary paddle)** option remains available.
+The default opponent, **NO MODEL (game engine)**, plays locally without API requests or credentials. It uses the same wall-reflected intercept calculation each physics step, clamps the target to the legal paddle-center range, and returns toward center when the ball moves away. The normal paddle speed limit still applies, and the paddle stays still during serves.
 
 ## Architecture and decision timing
 
@@ -172,7 +172,7 @@ Keys are read on the server. Restart the server after changing them.
 bun run dev
 ```
 
-Open [localhost:3000](http://localhost:3000). Select an opponent and difficulty, then start. The Disabled opponent keeps the right paddle stationary and needs no API key.
+Open [localhost:3000](http://localhost:3000). Select an opponent and difficulty, then start. The default **NO MODEL (game engine)** opponent needs no API key.
 
 | Control | Action |
 | --- | --- |
