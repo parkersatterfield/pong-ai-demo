@@ -1,10 +1,25 @@
 import "server-only";
 
+import { isRecord } from "../validation";
+import { retryAfterMs } from "./retry-after";
+
 export interface ProviderDiagnostics {
   requestBytes?: number;
   providerMs?: number;
   inputTokens?: number;
   outputTokens?: number;
+}
+
+// Only these upstream headers are safe to expose to the client.
+export function getErrorDiagnostics(response: Response) {
+  const headers = Object.fromEntries([...response.headers].filter(
+    ([name]) => name === "retry-after" || name === "x-request-id" || name.startsWith("x-ratelimit-"),
+  ));
+  return {
+    headers,
+    requestId: headers["x-request-id"],
+    retryAfterMs: retryAfterMs(headers["retry-after"] ?? null),
+  };
 }
 
 // Each route invocation owns its diagnostics; observations and credentials are never logged.
@@ -28,10 +43,10 @@ export async function requestDecision(
     });
     // Leave error bodies for provider-specific error handling.
     const result: unknown = response.ok ? await response.json() : null;
-    const usage = result && typeof result === "object" && "usage" in result ? result.usage : null;
-    if (usage && typeof usage === "object") {
-      if ("input_tokens" in usage && typeof usage.input_tokens === "number") diagnostics.inputTokens = usage.input_tokens;
-      if ("output_tokens" in usage && typeof usage.output_tokens === "number") diagnostics.outputTokens = usage.output_tokens;
+    if (isRecord(result) && isRecord(result.usage)) {
+      const usage = result.usage;
+      if (typeof usage.input_tokens === "number") diagnostics.inputTokens = usage.input_tokens;
+      if (typeof usage.output_tokens === "number") diagnostics.outputTokens = usage.output_tokens;
     }
     return { response, result };
   } finally {

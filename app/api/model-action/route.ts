@@ -2,31 +2,31 @@ import { DIFFICULTIES, COURT } from "@/lib/game";
 import { MODEL_REQUEST_TIMEOUT_MS, MODEL_TARGETS, type ModelObservation } from "@/lib/model-controller";
 import { getModelController } from "@/lib/server/model-registry";
 import { ModelError } from "@/lib/model-error";
+import { isRecord } from "@/lib/validation";
 import type { ProviderDiagnostics } from "@/lib/server/decision-request";
 
 function hasNumbers<K extends string>(value: unknown, keys: K[]): value is Record<K, number> {
-  if (value === null || typeof value !== "object") return false;
-  const record = value as Record<string, unknown>;
-  return keys.every((key) => typeof record[key] === "number" && Number.isFinite(record[key]));
+  return isRecord(value) && keys.every((key) => typeof value[key] === "number" && Number.isFinite(value[key]));
 }
 
 function parseObservation(value: unknown): ModelObservation | null {
-  if (!value || typeof value !== "object" || !("phase" in value) || value.phase !== "playing" ||
-    !hasNumbers(value, ["elapsed", "serveIn"]) ||
-    !("court" in value) || !hasNumbers(value.court, ["ballSpeed"]) ||
-    !DIFFICULTIES.map(({ ballSpeed }): number => ballSpeed).includes(value.court.ballSpeed) ||
-    !("ball" in value) || !hasNumbers(value.ball, ["x", "y", "vx", "vy"]) ||
-    !("paddles" in value) || !hasNumbers(value.paddles, ["left", "right"]) ||
-    !("score" in value) || !hasNumbers(value.score, ["left", "right"])) return null;
+  if (!isRecord(value) || value.phase !== "playing") return null;
+  const { court, ball, paddles, score } = value;
+  if (!hasNumbers(value, ["elapsed", "serveIn"]) ||
+    !hasNumbers(court, ["ballSpeed"]) ||
+    !DIFFICULTIES.some(({ ballSpeed }) => ballSpeed === court.ballSpeed) ||
+    !hasNumbers(ball, ["x", "y", "vx", "vy"]) ||
+    !hasNumbers(paddles, ["left", "right"]) ||
+    !hasNumbers(score, ["left", "right"])) return null;
 
   return {
     phase: "playing",
     elapsed: value.elapsed,
     serveIn: value.serveIn,
-    ball: { x: value.ball.x, y: value.ball.y, vx: value.ball.vx, vy: value.ball.vy },
-    paddles: { left: value.paddles.left, right: value.paddles.right },
-    score: { left: value.score.left, right: value.score.right },
-    court: { ...COURT, ballSpeed: value.court.ballSpeed },
+    ball: { x: ball.x, y: ball.y, vx: ball.vx, vy: ball.vy },
+    paddles: { left: paddles.left, right: paddles.right },
+    score: { left: score.left, right: score.right },
+    court: { ...COURT, ballSpeed: court.ballSpeed },
   };
 }
 
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
   } catch {
     return Response.json({ error: "Expected a JSON request body." }, { status: 400 });
   }
-  if (!body || typeof body !== "object" || !("modelId" in body) || typeof body.modelId !== "string" || !("observation" in body)) {
+  if (!isRecord(body) || typeof body.modelId !== "string" || !("observation" in body)) {
     return Response.json({ error: "Expected modelId and observation." }, { status: 400 });
   }
   const diagnostics: ProviderDiagnostics = {};
@@ -54,8 +54,8 @@ export async function POST(request: Request) {
 
   const timeout = AbortSignal.timeout(MODEL_REQUEST_TIMEOUT_MS);
   const signal = AbortSignal.any([request.signal, timeout]);
-  function responseHeaders() {
-    const headers = new Headers({ "Cache-Control": "no-store" });
+  function responseHeaders(extra: Record<string, string> = {}) {
+    const headers = new Headers({ ...extra, "Cache-Control": "no-store" });
     if (diagnostics.providerMs !== undefined) headers.set("Server-Timing", `provider;dur=${diagnostics.providerMs}`);
     return headers;
   }
@@ -72,11 +72,9 @@ export async function POST(request: Request) {
       }, { status: 504, headers: responseHeaders() });
     }
     if (error instanceof ModelError) {
-      const headers = responseHeaders();
-      for (const [name, value] of Object.entries(error.details.headers ?? {})) headers.set(name, value);
       return Response.json({ error: error.message, details: error.details }, {
         status: error.status,
-        headers,
+        headers: responseHeaders(error.details.headers),
       });
     }
     return Response.json({

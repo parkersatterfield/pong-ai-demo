@@ -35,20 +35,21 @@ export function runModelController({ modelId, controller, observe, onTarget, onS
   const session = new AbortController();
   let nextDecision: ReturnType<typeof setTimeout>;
 
-  function stay() {
-    onTarget(null);
+  function schedule(delayMs = 0) {
+    // Recheck long cooldowns in short slices to avoid timer overflow.
+    nextDecision = setTimeout(decide, Math.min(1000, Math.max(0, delayMs)));
   }
 
   function stop() {
     session.abort();
     clearTimeout(nextDecision);
-    stay();
+    onTarget(null);
     onResponse(null);
   }
 
-  function logOutcome(outcome: string, started: number) {
+  function logOutcome(outcome: string, responseMs: number) {
     if (process.env.NODE_ENV === "development") {
-      console.debug("[model-decision]", { modelId, outcome, responseMs: Math.round(performance.now() - started) });
+      console.debug("[model-decision]", { modelId, outcome, responseMs: Math.round(responseMs) });
     }
   }
 
@@ -60,14 +61,13 @@ export function runModelController({ modelId, controller, observe, onTarget, onS
     }
     const wait = retry.nextRequestAt - Date.now();
     if (wait > 0) {
-      // Short local waits also handle long Retry-After values without timer overflow.
-      nextDecision = setTimeout(decide, Math.min(wait, 1000));
+      schedule(wait);
       return;
     }
     const observation = observe();
     if (!canDecide(observation)) {
-      stay();
-      nextDecision = setTimeout(decide, IDLE_CHECK_MS);
+      onTarget(null);
+      schedule(IDLE_CHECK_MS);
       return;
     }
 
@@ -79,50 +79,53 @@ export function runModelController({ modelId, controller, observe, onTarget, onS
     try {
       const decision = await controller(observation, signal);
       if (session.signal.aborted) return;
-      onResponse(Math.round(performance.now() - started));
+      const responseMs = performance.now() - started;
+      onResponse(Math.round(responseMs));
       retry.failures = 0;
       retry.startedAt = null;
       if (!canDecide(observe())) {
-        stay();
+        onTarget(null);
         onStatus(null);
-        logOutcome("inactive", started);
-      } else if (performance.now() - started > MODEL_OBSERVATION_MAX_AGE_MS) {
+        logOutcome("inactive", responseMs);
+      } else if (responseMs > MODEL_OBSERVATION_MAX_AGE_MS) {
         onStatus("Stale model decision discarded; retaining the previous target.");
-        logOutcome("stale", started);
+        logOutcome("stale", responseMs);
       } else {
         onTarget(decision.targetY);
         onStatus(null);
-        logOutcome("accepted", started);
+        logOutcome("accepted", responseMs);
       }
     } catch (error) {
       if (session.signal.aborted) return;
-      const timedOut = signal.aborted || error instanceof ModelError && error.details.code === "request_timeout";
-      const message = timedOut ? "Model request timed out." : error instanceof Error ? error.message : "Model request failed.";
-      logOutcome(timedOut ? "timeout" : "error", started);
-      if (!timedOut) stay();
-      if (timedOut || error instanceof ModelError && error.details.retryable) {
-        retry.failures++;
-        retry.startedAt ??= Date.now();
-        const backoff = 1000 * 2 ** (retry.failures - 1);
-        const retryAfter = error instanceof ModelError ? error.details.retryAfterMs : undefined;
-        const delay = Math.max(MODEL_DECISION_INTERVAL_MS, retryAfter ?? backoff) + Math.random() * 250;
-        retry.nextRequestAt = Date.now() + delay;
-        if (retry.failures > MAX_RETRIES || retry.nextRequestAt - retry.startedAt > MAX_RETRY_MS) {
-          stop();
-          onError(`${message} Automatic retry limit reached. Resume after the cooldown to retry.`);
-          return;
-        }
-        onStatus(`${message}${timedOut ? " Retaining the previous target." : ""} Next attempt after ${new Date(retry.nextRequestAt).toLocaleTimeString()}.`);
-      } else {
+      const modelError = error instanceof ModelError ? error : null;
+      const timedOut = signal.aborted || modelError?.details.code === "request_timeout";
+      const message = timedOut ? "Model request timed out."
+        : error instanceof Error ? error.message : "Model request failed.";
+      logOutcome(timedOut ? "timeout" : "error", performance.now() - started);
+      if (!timedOut && !modelError?.details.retryable) {
         stop();
         onError(message);
         return;
       }
+
+      if (!timedOut) onTarget(null);
+      retry.failures++;
+      retry.startedAt ??= Date.now();
+      const backoff = 1000 * 2 ** (retry.failures - 1);
+      const delay = Math.max(MODEL_DECISION_INTERVAL_MS, modelError?.details.retryAfterMs ?? backoff) + Math.random() * 250;
+      retry.nextRequestAt = Date.now() + delay;
+      if (retry.failures > MAX_RETRIES || retry.nextRequestAt - retry.startedAt > MAX_RETRY_MS) {
+        stop();
+        onError(`${message} Automatic retry limit reached. Resume after the cooldown to retry.`);
+        return;
+      }
+      const retainedTarget = timedOut ? " Retaining the previous target." : "";
+      onStatus(`${message}${retainedTarget} Next attempt after ${new Date(retry.nextRequestAt).toLocaleTimeString()}.`);
     }
-    nextDecision = setTimeout(decide, Math.min(1000, Math.max(0, retry.nextRequestAt - Date.now())));
+    schedule(retry.nextRequestAt - Date.now());
   }
 
   // Schedule rather than running callbacks during a React effect's setup.
-  nextDecision = setTimeout(decide, 0);
+  schedule();
   return stop;
 }
