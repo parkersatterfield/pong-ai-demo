@@ -22,11 +22,13 @@ function canDecide(observation: ModelObservation) {
 }
 
 // Retry state belongs to the selected model and survives rally/session cancellation.
-export function runModelController({ controller, observe, onTarget, onStatus, onError, retry }: {
+export function runModelController({ modelId, controller, observe, onTarget, onStatus, onResponse, onError, retry }: {
+  modelId: string;
   controller: ModelController;
   observe: () => ModelObservation;
   onTarget: (targetY: number | null) => void;
   onStatus: (message: string | null) => void;
+  onResponse: (responseMs: number | null) => void;
   onError: (message: string) => void;
   retry: ModelRetryState;
 }) {
@@ -41,6 +43,13 @@ export function runModelController({ controller, observe, onTarget, onStatus, on
     session.abort();
     clearTimeout(nextDecision);
     stay();
+    onResponse(null);
+  }
+
+  function logOutcome(outcome: string, started: number) {
+    if (process.env.NODE_ENV === "development") {
+      console.debug("[model-decision]", { modelId, outcome, responseMs: Math.round(performance.now() - started) });
+    }
   }
 
   async function decide() {
@@ -70,35 +79,43 @@ export function runModelController({ controller, observe, onTarget, onStatus, on
     try {
       const decision = await controller(observation, signal);
       if (session.signal.aborted) return;
+      onResponse(Math.round(performance.now() - started));
       retry.failures = 0;
       retry.startedAt = null;
       if (!canDecide(observe())) {
         stay();
         onStatus(null);
+        logOutcome("inactive", started);
       } else if (performance.now() - started > MODEL_OBSERVATION_MAX_AGE_MS) {
         onStatus("Stale model decision discarded; retaining the previous target.");
+        logOutcome("stale", started);
       } else {
         onTarget(decision.targetY);
         onStatus(null);
+        logOutcome("accepted", started);
       }
     } catch (error) {
       if (session.signal.aborted) return;
-      stay();
-      if (error instanceof ModelError && error.details.retryable) {
+      const timedOut = signal.aborted || error instanceof ModelError && error.details.code === "request_timeout";
+      const message = timedOut ? "Model request timed out." : error instanceof Error ? error.message : "Model request failed.";
+      logOutcome(timedOut ? "timeout" : "error", started);
+      if (!timedOut) stay();
+      if (timedOut || error instanceof ModelError && error.details.retryable) {
         retry.failures++;
         retry.startedAt ??= Date.now();
         const backoff = 1000 * 2 ** (retry.failures - 1);
-        const delay = Math.max(MODEL_DECISION_INTERVAL_MS, error.details.retryAfterMs ?? backoff) + Math.random() * 250;
+        const retryAfter = error instanceof ModelError ? error.details.retryAfterMs : undefined;
+        const delay = Math.max(MODEL_DECISION_INTERVAL_MS, retryAfter ?? backoff) + Math.random() * 250;
         retry.nextRequestAt = Date.now() + delay;
         if (retry.failures > MAX_RETRIES || retry.nextRequestAt - retry.startedAt > MAX_RETRY_MS) {
           stop();
-          onError(`${error.message} Automatic retry limit reached. Resume after the cooldown to retry.`);
+          onError(`${message} Automatic retry limit reached. Resume after the cooldown to retry.`);
           return;
         }
-        onStatus(`${error.message} Next attempt after ${new Date(retry.nextRequestAt).toLocaleTimeString()}.`);
+        onStatus(`${message}${timedOut ? " Retaining the previous target." : ""} Next attempt after ${new Date(retry.nextRequestAt).toLocaleTimeString()}.`);
       } else {
         stop();
-        onError(signal.aborted ? "Model request timed out." : error instanceof Error ? error.message : "Model request failed.");
+        onError(message);
         return;
       }
     }

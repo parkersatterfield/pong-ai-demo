@@ -22,6 +22,7 @@ export default function PongGame() {
   const [modelError, setModelError] = useState<string | null>(null);
   const [modelNotice, setModelNotice] = useState<string | null>(null);
   const [decision, setDecision] = useState<{ targetY: number; at: number } | null>(null);
+  const [responseMs, setResponseMs] = useState<number | null>(null);
 
   function resetRetryBudget(id: string) {
     const retry = modelRetries.current[id];
@@ -35,6 +36,7 @@ export default function PongGame() {
     modelSession.current?.();
     modelTargetY.current = null;
     setDecision(null);
+    setResponseMs(null);
   }
 
   function togglePlay() {
@@ -64,6 +66,7 @@ export default function PongGame() {
 
     const retry = modelRetries.current[modelId] ??= { failures: 0, startedAt: null, nextRequestAt: 0 };
     const stop = runModelController({
+      modelId,
       controller: createRemoteController(modelId),
       observe: () => getModelObservation(game.current),
       onTarget: (targetY) => {
@@ -71,6 +74,7 @@ export default function PongGame() {
         setDecision(targetY === null ? null : { targetY, at: game.current.elapsed });
       },
       onStatus: setModelNotice,
+      onResponse: setResponseMs,
       retry,
       onError: (message) => {
         setModelError(message);
@@ -231,6 +235,7 @@ export default function PongGame() {
         <section className="decision-panel" aria-label="Live model decision">
           <div className="decision-heading"><span className={`status-dot ${playing && modelId ? "live" : ""}`} />Model decision <span>{modelId ? `${MODEL_DECISION_INTERVAL_MS} ms interval` : "Disabled"}</span></div>
           <div className="decision-values">
+            {responseMs !== null && <span>Response {responseMs} ms</span>}
             <strong>{decision && playing ? `Target Y ${decision.targetY.toFixed(2)}` : !modelId ? "Stationary paddle" : playing ? view.serveIn > 0 ? "Serving" : "Awaiting decision" : "Inactive"}</strong>
             {decision && playing && <><span>Paddle Y {view.paddles.right.toFixed(2)}</span><span>{targetMotion}</span><span>Selected at {decision.at.toFixed(1)} s</span></>}
           </div>

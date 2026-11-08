@@ -1,7 +1,8 @@
 import { DIFFICULTIES, COURT } from "@/lib/game";
-import { MODEL_REQUEST_TIMEOUT_MS, type ModelObservation } from "@/lib/model-controller";
+import { MODEL_REQUEST_TIMEOUT_MS, MODEL_TARGETS, type ModelObservation } from "@/lib/model-controller";
 import { getModelController } from "@/lib/server/model-registry";
 import { ModelError } from "@/lib/model-error";
+import type { ProviderDiagnostics } from "@/lib/server/decision-request";
 
 function hasNumbers<K extends string>(value: unknown, keys: K[]): value is Record<K, number> {
   if (value === null || typeof value !== "object") return false;
@@ -44,25 +45,46 @@ export async function POST(request: Request) {
   if (!body || typeof body !== "object" || !("modelId" in body) || typeof body.modelId !== "string" || !("observation" in body)) {
     return Response.json({ error: "Expected modelId and observation." }, { status: 400 });
   }
-  const controller = getModelController(body.modelId);
+  const diagnostics: ProviderDiagnostics = {};
+  const controller = getModelController(body.modelId, diagnostics);
   if (!controller) return Response.json({ error: "Unknown model." }, { status: 400 });
 
   const observation = parseObservation(body.observation);
   if (!observation) return Response.json({ error: "Invalid game observation." }, { status: 400 });
 
-  const signal = AbortSignal.any([request.signal, AbortSignal.timeout(MODEL_REQUEST_TIMEOUT_MS)]);
+  const timeout = AbortSignal.timeout(MODEL_REQUEST_TIMEOUT_MS);
+  const signal = AbortSignal.any([request.signal, timeout]);
+  function responseHeaders() {
+    const headers = new Headers({ "Cache-Control": "no-store" });
+    if (diagnostics.providerMs !== undefined) headers.set("Server-Timing", `provider;dur=${diagnostics.providerMs}`);
+    return headers;
+  }
+  let outcome = "success";
   try {
     const decision = await controller(observation, signal);
-    return Response.json(decision, { headers: { "Cache-Control": "no-store" } });
+    return Response.json(decision, { headers: responseHeaders() });
   } catch (error) {
+    outcome = request.signal.aborted ? "cancelled" : timeout.aborted ? "timeout" : "error";
+    if (timeout.aborted && !request.signal.aborted) {
+      return Response.json({
+        error: "Model request timed out.",
+        details: { code: "request_timeout", retryable: true },
+      }, { status: 504, headers: responseHeaders() });
+    }
     if (error instanceof ModelError) {
+      const headers = responseHeaders();
+      for (const [name, value] of Object.entries(error.details.headers ?? {})) headers.set(name, value);
       return Response.json({ error: error.message, details: error.details }, {
         status: error.status,
-        headers: { ...error.details.headers, "Cache-Control": "no-store" },
+        headers,
       });
     }
     return Response.json({
       error: signal.aborted ? "Model request timed out or was cancelled." : "Model request failed.",
-    }, { status: signal.aborted ? 504 : 502 });
+    }, { status: signal.aborted ? 504 : 502, headers: responseHeaders() });
+  } finally {
+    if (process.env.NODE_ENV === "development") {
+      console.debug("[model-provider]", { modelId: body.modelId, targetCount: MODEL_TARGETS.length, outcome, ...diagnostics });
+    }
   }
 }

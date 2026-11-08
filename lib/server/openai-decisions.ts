@@ -4,6 +4,7 @@ import { MODEL_TARGETS, type ModelController } from "../model-controller";
 import { ModelError } from "../model-error";
 import { getPaddleDecisionInput, PADDLE_TARGET_INSTRUCTIONS } from "../paddle-decision";
 import { retryAfterMs } from "./retry-after";
+import { requestDecision, type ProviderDiagnostics } from "./decision-request";
 
 async function readAPIError(response: Response): Promise<ModelError> {
   // Gateways can return non-JSON errors; still preserve the HTTP diagnostics.
@@ -32,7 +33,7 @@ async function readAPIError(response: Response): Promise<ModelError> {
   });
 }
 
-export function createOpenAIController(model: string): ModelController {
+export function createOpenAIController(model: string, diagnostics: ProviderDiagnostics = {}): ModelController {
   return async (observation, signal) => {
     const input = getPaddleDecisionInput(observation);
     if (!input) return { targetY: observation.paddles.right };
@@ -40,26 +41,19 @@ export function createOpenAIController(model: string): ModelController {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) throw new ModelError("Set OPENAI_API_KEY in .env.local and restart the server.", 503);
 
-    const response = await fetch("https://api.openai.com/v1/decisions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      cache: "no-store",
-      signal,
-      body: JSON.stringify({
-        model,
-        input: [{ role: "user", content: [{ type: "input_json", data: input }] }],
-        questions: [{
-          type: "choice",
-          name: "paddle_target",
-          instructions: PADDLE_TARGET_INSTRUCTIONS,
-          choices: MODEL_TARGETS.map((targetY) => ({ value: String(targetY), description: `Paddle center Y = ${targetY}` })),
-        }],
-      }),
-    });
+    const { response, result } = await requestDecision("https://api.openai.com/v1/decisions", apiKey, {
+      model,
+      input: [{ role: "user", content: [{ type: "input_json", data: input }] }],
+      questions: [{
+        type: "choice",
+        name: "paddle_target",
+        instructions: PADDLE_TARGET_INSTRUCTIONS,
+        choices: MODEL_TARGETS.map((targetY) => ({ value: String(targetY), description: `Paddle center Y = ${targetY}` })),
+      }],
+    }, signal, diagnostics);
 
     if (!response.ok) throw await readAPIError(response);
 
-    const result: unknown = await response.json();
     const answers = result && typeof result === "object" && "answers" in result ? result.answers : null;
     const answer: unknown = Array.isArray(answers)
       ? answers.find((item) => item?.name === "paddle_target" && item?.type === "choice")

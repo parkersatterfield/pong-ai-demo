@@ -14,8 +14,8 @@ export interface ModelObservation {
 export interface ModelDecision { targetY: number }
 
 // Include both limits and the exact center of the legal paddle-center range.
-export const MODEL_TARGETS = Array.from({ length: 33 }, (_, index) =>
-  Math.round((COURT.paddleHeight / 2 + (COURT.height - COURT.paddleHeight) * index / 32) * 100) / 100,
+export const MODEL_TARGETS = Array.from({ length: 9 }, (_, index) =>
+  Math.round((COURT.paddleHeight / 2 + (COURT.height - COURT.paddleHeight) * index / 8) * 100) / 100,
 );
 export const MODEL_REQUEST_TIMEOUT_MS = 1000;
 export const MODEL_DECISION_INTERVAL_MS = 500;
