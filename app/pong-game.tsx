@@ -1,19 +1,20 @@
 "use client";
 
-import { useEffect, useRef, useState, type PointerEvent } from "react";
-import { BALL_SPEED, COURT, clampPaddle, createGame, setBallSpeed, stepGame } from "@/lib/game";
+import { useEffect, useRef, useState } from "react";
+import { DIFFICULTIES, COURT, createGame, setBallSpeed, stepGame } from "@/lib/game";
 import { MODELS, MODEL_DECISION_INTERVAL_MS, getModelObservation } from "@/lib/model-controller";
 import { createRemoteController } from "@/lib/request-model-action";
 import { runModelController, type ModelRetryState } from "@/lib/run-model-controller";
 
 const STEP = 1 / 120;
+const PLAYER_RAMP_SECONDS = 0.06;
 
 export default function PongGame() {
   const [view, setView] = useState(createGame);
   const game = useRef(view);
   const court = useRef<SVGSVGElement>(null);
   const keys = useRef(new Set<string>());
-  const pointerY = useRef<number | null>(null);
+  const playerInput = useRef(0);
   const modelTargetY = useRef<number | null>(null);
   const modelSession = useRef<(() => void) | null>(null);
   const modelRetries = useRef<Record<string, ModelRetryState>>({});
@@ -51,7 +52,7 @@ export default function PongGame() {
     setModelNotice(null);
     resetRetryBudget(modelId);
     game.current = createGame(game.current.ballSpeed);
-    pointerY.current = null;
+    playerInput.current = 0;
     keys.current.clear();
     setView(game.current);
   }
@@ -86,19 +87,21 @@ export default function PongGame() {
       previous = now;
       accumulator += delta;
       while (accumulator >= STEP) {
-        if (game.current.phase === "playing" && pointerY.current !== null) {
-          game.current = { ...game.current, paddles: { ...game.current.paddles, left: pointerY.current } };
-        }
         const up = keys.current.has("w") || keys.current.has("arrowup");
         const down = keys.current.has("s") || keys.current.has("arrowdown");
+        const direction = up === down ? 0 : up ? -1 : 1;
+        // Ramp briefly on press and reversal; releasing the keys stops immediately.
+        playerInput.current = game.current.phase !== "playing" || direction === 0 ? 0 :
+          playerInput.current + Math.max(-STEP / PLAYER_RAMP_SECONDS,
+            Math.min(STEP / PLAYER_RAMP_SECONDS, direction - playerInput.current));
         const previousScore = game.current.score;
         game.current = stepGame(game.current, {
-          left: up === down ? "stay" : up ? "up" : "down",
+          left: playerInput.current,
           right: game.current.serveIn === 0 ? modelTargetY.current : null,
         }, STEP);
         if (game.current.score !== previousScore) {
           modelSession.current?.();
-          pointerY.current = null;
+          playerInput.current = 0;
         }
         accumulator -= STEP;
       }
@@ -109,7 +112,7 @@ export default function PongGame() {
     function pause() {
       modelSession.current?.();
       keys.current.clear();
-      pointerY.current = null;
+      playerInput.current = 0;
       if (game.current.phase === "playing") {
         game.current = { ...game.current, phase: "paused" };
         setView(game.current);
@@ -125,12 +128,6 @@ export default function PongGame() {
       document.removeEventListener("visibilitychange", pause);
     };
   }, []);
-
-  function movePointer(event: PointerEvent<SVGSVGElement>) {
-    if (event.pointerType !== "mouse" && !event.currentTarget.hasPointerCapture(event.pointerId)) return;
-    const bounds = event.currentTarget.getBoundingClientRect();
-    pointerY.current = clampPaddle((event.clientY - bounds.top) / bounds.height * COURT.height);
-  }
 
   const playing = view.phase === "playing";
   const finished = view.phase === "finished";
@@ -152,22 +149,21 @@ export default function PongGame() {
           setModelNotice(null);
           resetRetryBudget(event.target.value);
           setModelId(event.target.value);
+          court.current?.focus();
         }}>
           <option value="">Disabled (stationary paddle)</option>
           {MODELS.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
         </select>
-        <div className="speed-setting">
-          <label htmlFor="ball-speed">Ball speed</label>
-          <input id="ball-speed" type="range" min={BALL_SPEED.min} max={BALL_SPEED.max} step={BALL_SPEED.step}
-            value={view.ballSpeed} aria-valuetext={`${view.ballSpeed} court units per second`}
-            onChange={(event) => {
-              stopModel();
-              setModelNotice(null);
-              game.current = setBallSpeed(game.current, Number(event.target.value));
-              setView(game.current);
-            }} />
-          <output htmlFor="ball-speed">{view.ballSpeed} units/sec</output>
-        </div>
+        <label htmlFor="difficulty">Difficulty</label>
+        <select id="difficulty" value={view.ballSpeed} onChange={(event) => {
+          stopModel();
+          setModelNotice(null);
+          game.current = setBallSpeed(game.current, Number(event.target.value));
+          setView(game.current);
+          court.current?.focus();
+        }}>
+          {DIFFICULTIES.map((difficulty) => <option key={difficulty.id} value={difficulty.ballSpeed}>{difficulty.label}</option>)}
+        </select>
         <p className="decision-rate">
           {modelId ? `Up to ${1000 / MODEL_DECISION_INTERVAL_MS} decisions/sec · ${MODEL_DECISION_INTERVAL_MS} ms interval` : "Model decisions disabled"}
           {modelId && <span>While playing, in either ball direction; backoff may reduce the rate.</span>}
@@ -188,26 +184,17 @@ export default function PongGame() {
             viewBox={`0 0 ${COURT.width} ${COURT.height}`}
             tabIndex={0}
             role="application"
-            aria-label="Pong court. Use W and S or the up and down arrows to move. Space starts or pauses. You can also move your pointer or drag on the court."
+            aria-label="Pong court. Use W and S or the up and down arrows to move. Space starts or pauses."
             onKeyDown={(event) => {
               const key = event.key.toLowerCase();
               if (["w", "s", "arrowup", "arrowdown", " "].includes(key)) {
                 event.preventDefault();
                 if (key === " ") { if (!event.repeat) togglePlay(); }
-                else { pointerY.current = null; keys.current.add(key); }
+                else { keys.current.add(key); }
               }
             }}
             onKeyUp={(event) => { keys.current.delete(event.key.toLowerCase()); }}
-            onBlur={() => { keys.current.clear(); pointerY.current = null; }}
-            onPointerDown={(event) => {
-              event.currentTarget.focus();
-              event.currentTarget.setPointerCapture(event.pointerId);
-              movePointer(event);
-            }}
-            onPointerMove={movePointer}
-            onPointerUp={(event) => { event.currentTarget.releasePointerCapture(event.pointerId); pointerY.current = null; }}
-            onPointerCancel={() => { pointerY.current = null; }}
-            onPointerLeave={() => { pointerY.current = null; }}
+            onBlur={() => { keys.current.clear(); playerInput.current = 0; }}
           >
             <defs><pattern id="court-grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="currentColor" strokeWidth="0.5" /></pattern></defs>
             <rect width={COURT.width} height={COURT.height} fill="url(#court-grid)" className="court-grid" />
@@ -229,12 +216,12 @@ export default function PongGame() {
         <div className="court-toolbar">
           <span className="match-status" role="status"><span className={`status-dot ${playing ? "live" : ""}`} />{status}</span>
           <span className="match-rule">FIRST TO {COURT.winningScore} <span> / </span> {String(Math.floor(view.elapsed / 60)).padStart(2, "0")}:{String(Math.floor(view.elapsed % 60)).padStart(2, "0")}</span>
-          <div className="game-actions"><button onClick={() => { togglePlay(); court.current?.focus(); }}>{playing ? "Ⅱ Pause" : view.phase === "paused" ? "▶ Resume" : "▶ Play"}</button><button onClick={reset} aria-label="Reset game">↺ <span>Reset</span></button></div>
+          <div className="game-actions"><button onClick={() => { togglePlay(); court.current?.focus(); }}>{playing ? "Ⅱ Pause" : view.phase === "paused" ? "▶ Resume" : "▶ Play"}</button><button onClick={() => { reset(); court.current?.focus(); }} aria-label="Reset game">↺ <span>Reset</span></button></div>
         </div>
       </section>
 
       <section className="below-court" aria-label="Controls and opponent status">
-        <div className="controls"><span className="section-label">CONTROLS</span><p><span><kbd>W</kbd><kbd>S</kbd> <span className="muted">or</span> <kbd>↑</kbd><kbd>↓</kbd></span><span>Move left paddle</span><span className="control-separator" /><span>Mouse movement or touch drag</span></p></div>
+        <div className="controls"><span className="section-label">CONTROLS</span><p><span><kbd>W</kbd><kbd>S</kbd> <span className="muted">or</span> <kbd>↑</kbd><kbd>↓</kbd></span><span>Move left paddle</span></p></div>
         <div className="model-note" role="status"><span className="note-icon" aria-hidden="true">✳</span><div><h3>{modelError ? "Model request failed" : modelNotice ? "Model status" : modelId ? "Model control enabled" : "Model control disabled"}</h3><p>{modelError ?? modelNotice ?? (modelId ? "Game state is sent only while playing." : "The right paddle is stationary.")}</p></div></div>
       </section>
     </main>

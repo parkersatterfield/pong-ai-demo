@@ -1,4 +1,4 @@
-import { BALL_SPEED, COURT } from "@/lib/game";
+import { DIFFICULTIES, COURT } from "@/lib/game";
 import { MODEL_REQUEST_TIMEOUT_MS, type ModelObservation } from "@/lib/model-controller";
 import { getModelController } from "@/lib/server/model-registry";
 import { ModelError } from "@/lib/model-error";
@@ -13,7 +13,7 @@ function parseObservation(value: unknown): ModelObservation | null {
   if (!value || typeof value !== "object" || !("phase" in value) || value.phase !== "playing" ||
     !hasNumbers(value, ["elapsed", "serveIn"]) ||
     !("court" in value) || !hasNumbers(value.court, ["ballSpeed"]) ||
-    value.court.ballSpeed < BALL_SPEED.min || value.court.ballSpeed > BALL_SPEED.max ||
+    !DIFFICULTIES.map(({ ballSpeed }): number => ballSpeed).includes(value.court.ballSpeed) ||
     !("ball" in value) || !hasNumbers(value.ball, ["x", "y", "vx", "vy"]) ||
     !("paddles" in value) || !hasNumbers(value.paddles, ["left", "right"]) ||
     !("score" in value) || !hasNumbers(value.score, ["left", "right"])) return null;

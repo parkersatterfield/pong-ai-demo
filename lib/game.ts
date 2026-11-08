@@ -1,3 +1,10 @@
+export const DIFFICULTIES = [
+  { id: "easy", label: "Easy", ballSpeed: 300 },
+  { id: "medium", label: "Medium", ballSpeed: 450 },
+  { id: "hard", label: "Hard", ballSpeed: 600 },
+  { id: "extra-hard", label: "Extra hard", ballSpeed: 800 },
+] as const;
+
 export const COURT = {
   width: 960,
   height: 540,
@@ -6,13 +13,10 @@ export const COURT = {
   paddleInset: 32,
   paddleSpeed: 440,
   ballRadius: 7,
-  ballSpeed: 240,
+  ballSpeed: DIFFICULTIES[1].ballSpeed,
   winningScore: 7,
 } as const;
 
-export const BALL_SPEED = { min: 100, max: 480, step: 20 } as const;
-
-export type PaddleAction = "up" | "down" | "stay";
 export type GamePhase = "ready" | "playing" | "paused" | "finished";
 export type Side = "left" | "right";
 
@@ -63,16 +67,17 @@ export function clampPaddle(y: number) {
 
 // Coordinates are court units; velocities are court units per second.
 // The caller advances the simulation using fixed, small time steps.
+// Left input ranges from -1 (up) to 1 (down); right input is a target Y.
 export function stepGame(
   state: GameState,
-  actions: { left: PaddleAction; right: number | null },
+  actions: { left: number; right: number | null },
   dt: number,
 ): GameState {
   if (state.phase !== "playing") return state;
 
   const distance = COURT.paddleSpeed * dt;
   const paddles = {
-    left: clampPaddle(state.paddles.left + (actions.left === "up" ? -1 : actions.left === "down" ? 1 : 0) * distance),
+    left: clampPaddle(state.paddles.left + actions.left * distance),
     right: actions.right === null ? state.paddles.right : clampPaddle(
       state.paddles.right + Math.max(-distance, Math.min(distance, actions.right - state.paddles.right)),
     ),

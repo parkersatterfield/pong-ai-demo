@@ -32,10 +32,6 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outlin
 .model-settings { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; font-size: 12px; color: var(--muted); }
 .model-settings select { max-width: 100%; padding: 8px 10px; border: 1px solid #434a3d; border-radius: 5px; background: #181c17; color: var(--foreground); font: inherit; }
 .model-settings select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-.speed-setting { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
-.speed-setting input { width: 140px; accent-color: var(--accent); }
-.speed-setting input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-.speed-setting output { min-width: 90px; font-variant-numeric: tabular-nums; color: var(--foreground); }
 .decision-rate { flex-basis: 100%; margin: 0; line-height: 1.7; }
 .decision-rate span { display: block; }
 .scoreboard { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 23px 30px; gap: 20px; }
@@ -51,7 +47,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outlin
 .scores > span:last-child { color: #c0c7b7; }
 .score-divider { color: #50584b; font-size: 22px; }
 .court-wrap { position: relative; margin: 0 15px; border: 1px solid #35402e; border-radius: 5px; overflow: hidden; background: #11190f; }
-.court { display: block; width: 100%; aspect-ratio: 16 / 9; touch-action: none; cursor: crosshair; }
+.court { display: block; width: 100%; aspect-ratio: 16 / 9; }
 .court:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--accent); }
 .court-grid { color: #485b38; opacity: .3; }
 .center-line { stroke: #526044; stroke-width: 2; stroke-dasharray: 8 11; opacity: .6; }
@@ -81,7 +77,6 @@ kbd { display: inline-flex; align-items: center; justify-content: center; font-f
 .controls p { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; font-size: 11px; color: var(--muted); margin: 12px 0 0; }
 .controls p > span:first-child { display: flex; gap: 4px; align-items: center; }
 .muted { margin: 0 4px; }
-.control-separator { width: 1px; height: 12px; background: #383e32; }
 .model-note { display: flex; gap: 12px; border-left: 1px solid #353d2e; padding-left: 25px; max-width: 330px; }
 .note-icon { font-size: 23px; color: #a0ae8e; line-height: 1; }
 .model-note h3 { margin: 0 0 7px; font-size: 12px; font-weight: 500; }
