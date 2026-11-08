@@ -2,9 +2,11 @@ import "server-only";
 
 import { MODELS, type ModelController } from "../model-controller";
 import { createOpenAIController } from "./openai-decisions";
+import { createTypesafeController } from "./typesafe";
 
 const providers: Record<(typeof MODELS)[number]["provider"], (model: string) => ModelController> = {
   "openai-decisions": createOpenAIController,
+  typesafe: createTypesafeController,
 };
 
 export function getModelController(id: string): ModelController | undefined {

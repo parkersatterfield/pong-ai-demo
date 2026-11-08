@@ -24,6 +24,7 @@ export const MODEL_OBSERVATION_MAX_AGE_MS = 500;
 // Add model entries here; provider implementations stay on the server.
 export const MODELS = [
   { id: "openai-decisions", label: "OpenAI Decisions / gpt-6-luna", provider: "openai-decisions", model: "gpt-6-luna" },
+  { id: "typesafe-jev", label: "Typesafe / Jev (jev-latest)", provider: "typesafe", model: "jev-latest" },
 ] as const;
 
 // All providers implement the same observation-to-action contract.

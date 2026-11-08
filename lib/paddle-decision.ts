@@ -1,5 +1,7 @@
 import { MODEL_DECISION_INTERVAL_MS, type ModelObservation } from "./model-controller";
 
+export const PADDLE_TARGET_INSTRUCTIONS = "Choose the right paddle center Y from the available targets. Coordinates start at the top left; positive Y is down. Positions are court units, velocities and paddle speed are units/second, and times are milliseconds. Use intercept.centerY as the desired center when intercept is present; it includes wall bounces. Negative targetOffsetY means above the current paddle, positive means below. Choose the available target closest to the desired center. If intercept is null, choose the target closest to recoveryCenterY. The game moves continuously toward your target at paddle.speed and stops there without overshooting. The target persists between requests until replaced or the session stops. Do not limit movement to one decision interval. Predictions assume unchanged ball speed and exclude request latency.";
+
 export interface PaddleDecisionInput {
   court: { width: number; height: number };
   ball: ModelObservation["ball"] & { radius: number };

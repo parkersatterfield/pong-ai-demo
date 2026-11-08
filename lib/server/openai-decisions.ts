@@ -2,15 +2,8 @@ import "server-only";
 
 import { MODEL_TARGETS, type ModelController } from "../model-controller";
 import { ModelError } from "../model-error";
-import { getPaddleDecisionInput } from "../paddle-decision";
-
-function retryAfterMs(value: string | null): number | undefined {
-  if (!value?.trim()) return undefined;
-  const seconds = Number(value);
-  if (Number.isFinite(seconds)) return seconds >= 0 ? seconds * 1000 : undefined;
-  const date = Date.parse(value);
-  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : undefined;
-}
+import { getPaddleDecisionInput, PADDLE_TARGET_INSTRUCTIONS } from "../paddle-decision";
+import { retryAfterMs } from "./retry-after";
 
 async function readAPIError(response: Response): Promise<ModelError> {
   // Gateways can return non-JSON errors; still preserve the HTTP diagnostics.
@@ -58,7 +51,7 @@ export function createOpenAIController(model: string): ModelController {
         questions: [{
           type: "choice",
           name: "paddle_target",
-          instructions: "Choose the right paddle center Y from the available targets. Coordinates start at the top left; positive Y is down. Positions are court units, velocities and paddle speed are units/second, and times are milliseconds. Use intercept.centerY as the desired center when intercept is present; it includes wall bounces. Negative targetOffsetY means above the current paddle, positive means below. Choose the available target closest to the desired center. If intercept is null, choose the target closest to recoveryCenterY. The game moves continuously toward your target at paddle.speed and stops there without overshooting. The target persists between requests until replaced or the session stops. Do not limit movement to one decision interval. Predictions assume unchanged ball speed and exclude request latency.",
+          instructions: PADDLE_TARGET_INSTRUCTIONS,
           choices: MODEL_TARGETS.map((targetY) => ({ value: String(targetY), description: `Paddle center Y = ${targetY}` })),
         }],
       }),
