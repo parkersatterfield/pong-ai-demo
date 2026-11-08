@@ -22,9 +22,13 @@ export const MODEL_DECISION_INTERVAL_MS = 500;
 export const MODEL_OBSERVATION_MAX_AGE_MS = 500;
 
 // Add model entries here; provider implementations stay on the server.
+export type PaddleInputMode = "intercept" | "spatial";
+
 export const MODELS = [
-  { id: "openai-decisions", label: "OpenAI Decisions / gpt-6-luna", provider: "openai-decisions", model: "gpt-6-luna" },
-  { id: "typesafe-jev", label: "Typesafe / Jev (jev-latest)", provider: "typesafe", model: "jev-latest" },
+  { id: "openai-decisions", label: "OpenAI Decisions / gpt-6-luna (with yIntercept)", provider: "openai-decisions", model: "gpt-6-luna", inputMode: "intercept" },
+  { id: "typesafe-jev", label: "Typesafe / Jev (jev-latest) (with yIntercept)", provider: "typesafe", model: "jev-latest", inputMode: "intercept" },
+  { id: "openai-decisions-spatial", label: "OpenAI Decisions / gpt-6-luna (no yIntercept)", provider: "openai-decisions", model: "gpt-6-luna", inputMode: "spatial" },
+  { id: "typesafe-jev-spatial", label: "Typesafe / Jev (jev-latest) (no yIntercept)", provider: "typesafe", model: "jev-latest", inputMode: "spatial" },
 ] as const;
 
 // All providers implement the same observation-to-action contract.

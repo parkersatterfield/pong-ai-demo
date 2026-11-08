@@ -12,7 +12,7 @@ Deciding what input payload was the most important part of the experiment. You c
 
 We tried withholding the predicted interception point. The intent was to give the model the ball's position and velocity plus court and paddle geometry, then see whether it could work out where to move on its own, including top and bottom wall reflections.
 
-The current implementation computes `interceptY` programmatically in the game engine and includes it in the model input. The prompt explicitly asks for the available target closest to that prediction. When the ball is moving away, `interceptY` is null and the model chooses a recovery position. This almost feels like cheating but it makes for a fun demo. How much of the game is the model actually playing.
+The original options, labeled **with yIntercept**, compute `interceptY` programmatically in the game engine and include it in the model input. The prompt explicitly asks for the available target closest to that prediction. When the ball is moving away, `interceptY` is null and the model chooses a recovery position. This almost feels like cheating but it makes for a fun demo. How much of the game is the model actually playing.
 
 This narrows what the demo demonstrates: the model selects among destinations using an engineered physics feature. It does not independently solve the trajectory. A deterministic nearest-target selector could perform the intercept selection too; keeping it as a model decision lets us inspect the API integration and control loop. I hope to keep experimenting with payloads that we can send these models such that the intercept is not calculated and sent to the model as input.
 
@@ -20,7 +20,7 @@ This narrows what the demo demonstrates: the model selects among destinations us
 
 The browser sends `{ modelId, observation }` to `POST /api/model-action`. That internal observation includes the game phase, score, elapsed time, serve delay, both paddles, ball state, and court geometry. The server validates it and reconstructs court geometry from its own constants.
 
-Before calling either provider, [`getPaddleDecisionInput`](lib/paddle-decision.ts) reduces that observation to the following shape. This is an illustrative packet with values consistent with the current geometry:
+For the **with yIntercept** options, [`getPaddleDecisionInput`](lib/paddle-decision.ts) reduces that observation to the following shape. This is an illustrative packet with values consistent with the current geometry:
 
 ```json
 {
@@ -41,7 +41,30 @@ Both adapters use this exact instruction from [`lib/paddle-decision.ts`](lib/pad
 Choose the paddle-center target closest to interceptY; it includes wall reflections. If interceptY is null, choose a recovery position. The paddle moves toward your target at paddle.speed and stops there.
 ```
 
-The OpenAI adapter builds this request body in [`lib/server/openai-decisions.ts`](lib/server/openai-decisions.ts):
+### Experiment: no yIntercept
+
+Each provider also has a **no yIntercept** option. These options use the same models, nine physical destinations, 500 ms request interval, and paddle speed limits as the original options. They send normalized current state and explicit physics rules without calculating or sending an intercept, predicted bounces, or future ball positions.
+
+All lengths and velocities use one scale factor, `100 / court.height`, rounded to two decimal places. Court height becomes 100 while angles and travel times are preserved apart from rounding. For the same example above, the provider input is:
+
+```json
+{
+  "court": { "width": 177.78, "height": 100 },
+  "ball": {
+    "x": 88.89, "y": 50, "vx": 66.67, "vy": 50, "radius": 1.3,
+    "horizontalDirection": "toward you", "verticalDirection": "down"
+  },
+  "paddle": { "centerY": 50, "height": 16.3, "speed": 81.48, "ballContactX": 168.33 }
+}
+```
+
+`ballContactX` is static geometry: the ball-center X at contact with the right paddle. Direction names describe the current velocity signs. Instructions explain the coordinate system, constant motion between collisions, wall reflections, paddle movement limits, and recovery when the ball travels away. Target choices use normalized Y values and spatial descriptions such as **Above center**; the adapter maps the chosen value back to its original court-unit destination. The browser continues to display targets in court units.
+
+This first experiment includes no observation history, active target, or measured latency. Compare the options at the same difficulty; improvement in play is an experimental outcome, not an assumed property of the new representation.
+
+### Provider requests
+
+The OpenAI adapter builds this request body for the original options in [`lib/server/openai-decisions.ts`](lib/server/openai-decisions.ts):
 
 ```ts
 {
@@ -61,7 +84,7 @@ The OpenAI adapter builds this request body in [`lib/server/openai-decisions.ts`
 
 The adapter posts it to `https://api.openai.com/v1/decisions` with a server-side API key. The configured model is `gpt-6-luna`. It reads the named `paddle_target` choice, checks it against `MODEL_TARGETS`, and returns `{ targetY }` to the browser.
 
-The [`Typesafe adapter`](lib/server/typesafe.ts) uses `jev-latest` at `https://api.typesafe.ai/v1/systemone`. It supplies the same input as `state` and the same target choices as `questions.paddle_target.criteria`, then reads `answers.paddle_target.choice`. Provider formatting stays outside the simulation.
+The [`Typesafe adapter`](lib/server/typesafe.ts) uses `jev-latest` at `https://api.typesafe.ai/v1/systemone`. It supplies the same input as `state` and the same target choices as `questions.paddle_target.criteria`, then reads `answers.paddle_target.choice`. Both adapters use the selected option's shared input, instructions, and choices from `getPaddleDecisionPrompt`. Provider formatting stays outside the simulation.
 
 ## Where the physics assistance happens
 
