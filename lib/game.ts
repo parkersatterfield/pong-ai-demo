@@ -31,12 +31,11 @@ export interface GameState {
 }
 
 function serve(direction: number, speed: number) {
-  const angle = Math.atan(0.35);
   return {
     x: COURT.width / 2,
     y: COURT.height / 2,
-    vx: direction * speed * Math.cos(angle),
-    vy: speed * Math.sin(angle),
+    vx: direction * speed,
+    vy: 0,
   };
 }
 
