@@ -21,6 +21,7 @@ export default function PongGame() {
   const [modelId, setModelId] = useState<string>(MODELS[0].id);
   const [modelError, setModelError] = useState<string | null>(null);
   const [modelNotice, setModelNotice] = useState<string | null>(null);
+  const [decision, setDecision] = useState<{ targetY: number; at: number } | null>(null);
 
   function resetRetryBudget(id: string) {
     const retry = modelRetries.current[id];
@@ -33,6 +34,7 @@ export default function PongGame() {
   function stopModel() {
     modelSession.current?.();
     modelTargetY.current = null;
+    setDecision(null);
   }
 
   function togglePlay() {
@@ -64,7 +66,10 @@ export default function PongGame() {
     const stop = runModelController({
       controller: createRemoteController(modelId),
       observe: () => getModelObservation(game.current),
-      onTarget: (targetY) => { modelTargetY.current = targetY; },
+      onTarget: (targetY) => {
+        modelTargetY.current = targetY;
+        setDecision(targetY === null ? null : { targetY, at: game.current.elapsed });
+      },
       onStatus: setModelNotice,
       retry,
       onError: (message) => {
@@ -134,47 +139,21 @@ export default function PongGame() {
   const buttonLabel = playing ? "Pause game" : view.phase === "paused" ? "Resume game" : finished ? "Play again" : "Start game";
   const status = playing ? "In play" : view.phase === "paused" ? "Paused" : finished ? "Match complete" : "Ready to play";
 
+  const modelLabel = MODELS.find((model) => model.id === modelId)?.label ?? "Model disabled";
+  const difficultyLabel = DIFFICULTIES.find(({ ballSpeed }) => ballSpeed === view.ballSpeed)?.label;
+  const targetMotion = !decision || Math.abs(decision.targetY - view.paddles.right) < 0.01 ? "At target" :
+    decision.targetY < view.paddles.right ? "Moving up" : "Moving down";
+
   return (
     <main className="game-shell">
-      <header className="masthead">
-        <h1 className="wordmark" aria-label="Pong AI"><span className="brand-icon" aria-hidden="true">Ⅱ</span> pong<span className="wordmark-ai">/ai</span></h1>
-        <span className="build-label"><span className="status-dot" /> TECHNICAL DEMO <span className="version">v0.1</span></span>
-      </header>
-
-      <div className="model-settings">
-        <label htmlFor="opponent-model">Opponent</label>
-        <select id="opponent-model" value={modelId} onChange={(event) => {
-          stopModel();
-          setModelError(null);
-          setModelNotice(null);
-          resetRetryBudget(event.target.value);
-          setModelId(event.target.value);
-          court.current?.focus();
-        }}>
-          <option value="">Disabled (stationary paddle)</option>
-          {MODELS.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
-        </select>
-        <label htmlFor="difficulty">Difficulty</label>
-        <select id="difficulty" value={view.ballSpeed} onChange={(event) => {
-          stopModel();
-          setModelNotice(null);
-          game.current = setBallSpeed(game.current, Number(event.target.value));
-          setView(game.current);
-          court.current?.focus();
-        }}>
-          {DIFFICULTIES.map((difficulty) => <option key={difficulty.id} value={difficulty.ballSpeed}>{difficulty.label}</option>)}
-        </select>
-        <p className="decision-rate">
-          {modelId ? `Up to ${1000 / MODEL_DECISION_INTERVAL_MS} decisions/sec · ${MODEL_DECISION_INTERVAL_MS} ms interval` : "Model decisions disabled"}
-          {modelId && <span>While playing, in either ball direction; backoff may reduce the rate.</span>}
-        </p>
-      </div>
-
       <section className="arena" aria-label="Pong game">
         <div className="scoreboard">
-          <div className="player player-human"><span className="player-symbol">↗</span><div><h2>You</h2><span>HUMAN · LEFT PADDLE</span></div></div>
-          <div className="scores" aria-label={`You ${view.score.left}, opponent ${view.score.right}`}><span>{String(view.score.left).padStart(2, "0")}</span><span className="score-divider">:</span><span>{String(view.score.right).padStart(2, "0")}</span></div>
-          <div className="player player-model"><div><h2>Model <span className="offline-tag">{modelError ? "ERROR" : !modelId ? "OFFLINE" : playing ? "ACTIVE" : "IDLE"}</span></h2><span>AI · RIGHT PADDLE</span></div><span className="player-symbol">✳</span></div>
+          <div className="player"><span>You</span><small>LEFT PADDLE</small></div>
+          <div className="scores" aria-label={`You ${view.score.left}, opponent ${view.score.right}`}>
+            <span>{String(view.score.left).padStart(2, "0")}</span><span className="score-divider">:</span><span>{String(view.score.right).padStart(2, "0")}</span>
+          </div>
+          <div className="player player-model"><span>{modelLabel}</span><small>{difficultyLabel} · First to {COURT.winningScore}</small></div>
+          {playing && <button className="pause-button" onClick={togglePlay}>Pause / Menu</button>}
         </div>
 
         <div className="court-wrap">
@@ -184,12 +163,12 @@ export default function PongGame() {
             viewBox={`0 0 ${COURT.width} ${COURT.height}`}
             tabIndex={0}
             role="application"
-            aria-label="Pong court. Use W and S or the up and down arrows to move. Space starts or pauses."
+            aria-label="Pong court. Use W and S or the up and down arrows to move. Space starts or pauses. Escape pauses."
             onKeyDown={(event) => {
               const key = event.key.toLowerCase();
-              if (["w", "s", "arrowup", "arrowdown", " "].includes(key)) {
+              if (["w", "s", "arrowup", "arrowdown", " ", "escape"].includes(key)) {
                 event.preventDefault();
-                if (key === " ") { if (!event.repeat) togglePlay(); }
+                if (key === " " || key === "escape") { if (!event.repeat && (key === " " || playing)) togglePlay(); }
                 else { keys.current.add(key); }
               }
             }}
@@ -200,6 +179,10 @@ export default function PongGame() {
             <rect width={COURT.width} height={COURT.height} fill="url(#court-grid)" className="court-grid" />
             <line x1="480" y1="0" x2="480" y2="540" className="center-line" />
             <circle cx="480" cy="270" r="66" className="center-circle" />
+            {playing && decision && <g className="target-marker" aria-hidden="true">
+              <rect x={COURT.width - COURT.paddleInset - COURT.paddleWidth - 6} y={decision.targetY - COURT.paddleHeight / 2} width={COURT.paddleWidth + 12} height={COURT.paddleHeight} rx="3" />
+              <line x1={COURT.width - 110} x2={COURT.width - COURT.paddleInset - 22} y1={decision.targetY} y2={decision.targetY} />
+            </g>}
             <rect x={COURT.paddleInset} y={view.paddles.left - COURT.paddleHeight / 2} width={COURT.paddleWidth} height={COURT.paddleHeight} rx="3" className="human-paddle" />
             <rect x={COURT.width - COURT.paddleInset - COURT.paddleWidth} y={view.paddles.right - COURT.paddleHeight / 2} width={COURT.paddleWidth} height={COURT.paddleHeight} rx="3" className="model-paddle" />
             <circle cx={view.ball.x} cy={view.ball.y} r={COURT.ballRadius} className="ball" />
@@ -207,22 +190,52 @@ export default function PongGame() {
           </svg>
 
           {!playing && <div className="court-overlay">
-            <h2>{finished ? (view.score.left > view.score.right ? "You win" : "Opponent wins") : status}</h2>
-            <button className="primary-button" onClick={() => { togglePlay(); court.current?.focus(); }}><span aria-hidden="true">▶</span> {buttonLabel}</button>
-            <span className="overlay-hint">or focus the court and press <kbd>space</kbd></span>
+            <section className="game-menu" aria-labelledby="menu-title">
+              <h1 id="menu-title">{finished ? (view.score.left > view.score.right ? "You win" : "Opponent wins") : status}</h1>
+              <div className="model-settings">
+                <label htmlFor="opponent-model">Opponent</label>
+                <select id="opponent-model" value={modelId} onChange={(event) => {
+                  stopModel();
+                  setModelError(null);
+                  setModelNotice(null);
+                  resetRetryBudget(event.target.value);
+                  setModelId(event.target.value);
+                }}>
+                  <option value="">Disabled (stationary paddle)</option>
+                  {MODELS.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
+                </select>
+                <label htmlFor="difficulty">Difficulty</label>
+                <select id="difficulty" value={view.ballSpeed} onChange={(event) => {
+                  stopModel();
+                  setModelNotice(null);
+                  game.current = setBallSpeed(game.current, Number(event.target.value));
+                  setView(game.current);
+                }}>
+                  {DIFFICULTIES.map((difficulty) => <option key={difficulty.id} value={difficulty.ballSpeed}>{difficulty.label}</option>)}
+                </select>
+                <p className="decision-rate">
+                  {modelId ? `Up to ${1000 / MODEL_DECISION_INTERVAL_MS} decisions/sec · ${MODEL_DECISION_INTERVAL_MS} ms interval` : "Model decisions disabled"}
+                  {modelId && <span>While playing, in either ball direction; backoff may reduce the rate.</span>}
+                </p>
+              </div>
+              <p className="controls"><kbd>↑</kbd> <kbd>↓</kbd> or <kbd>W</kbd> <kbd>S</kbd> move · <kbd>space</kbd> / <kbd>esc</kbd> pause</p>
+              {modelError && <p className="menu-error" role="alert">{modelError}</p>}
+              <div className="menu-actions">
+                <button className="primary-button" autoFocus onClick={() => { togglePlay(); court.current?.focus(); }}>{buttonLabel}</button>
+                <button onClick={reset}>Reset match</button>
+              </div>
+            </section>
           </div>}
         </div>
 
-        <div className="court-toolbar">
-          <span className="match-status" role="status"><span className={`status-dot ${playing ? "live" : ""}`} />{status}</span>
-          <span className="match-rule">FIRST TO {COURT.winningScore} <span> / </span> {String(Math.floor(view.elapsed / 60)).padStart(2, "0")}:{String(Math.floor(view.elapsed % 60)).padStart(2, "0")}</span>
-          <div className="game-actions"><button onClick={() => { togglePlay(); court.current?.focus(); }}>{playing ? "Ⅱ Pause" : view.phase === "paused" ? "▶ Resume" : "▶ Play"}</button><button onClick={() => { reset(); court.current?.focus(); }} aria-label="Reset game">↺ <span>Reset</span></button></div>
-        </div>
-      </section>
-
-      <section className="below-court" aria-label="Controls and opponent status">
-        <div className="controls"><span className="section-label">CONTROLS</span><p><span><kbd>W</kbd><kbd>S</kbd> <span className="muted">or</span> <kbd>↑</kbd><kbd>↓</kbd></span><span>Move left paddle</span></p></div>
-        <div className="model-note" role="status"><span className="note-icon" aria-hidden="true">✳</span><div><h3>{modelError ? "Model request failed" : modelNotice ? "Model status" : modelId ? "Model control enabled" : "Model control disabled"}</h3><p>{modelError ?? modelNotice ?? (modelId ? "Game state is sent only while playing." : "The right paddle is stationary.")}</p></div></div>
+        <section className="decision-panel" aria-label="Live model decision">
+          <div className="decision-heading"><span className={`status-dot ${playing && modelId ? "live" : ""}`} />Model decision <span>{modelId ? `${MODEL_DECISION_INTERVAL_MS} ms interval` : "Disabled"}</span></div>
+          <div className="decision-values">
+            <strong>{decision && playing ? `Target Y ${decision.targetY.toFixed(2)}` : !modelId ? "Stationary paddle" : playing ? view.serveIn > 0 ? "Serving" : "Awaiting decision" : "Inactive"}</strong>
+            {decision && playing && <><span>Paddle Y {view.paddles.right.toFixed(2)}</span><span>{targetMotion}</span><span>Selected at {decision.at.toFixed(1)} s</span></>}
+          </div>
+          <p role="status">{modelError ?? modelNotice ?? (decision && playing ? "Dashed marker shows the selected destination." : playing && modelId ? "Waiting for an accepted model target." : status)}</p>
+        </section>
       </section>
     </main>
   );
