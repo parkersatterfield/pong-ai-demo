@@ -4,7 +4,7 @@ import { COURT, type GameState, type PaddleAction } from "./game";
 export interface ModelObservation {
   elapsed: number;
   phase: GameState["phase"];
-  court: typeof COURT;
+  court: Omit<typeof COURT, "ballSpeed"> & { ballSpeed: number };
   ball: GameState["ball"];
   paddles: GameState["paddles"];
   score: GameState["score"];
@@ -35,7 +35,7 @@ export function getModelObservation(state: GameState): ModelObservation {
   return {
     elapsed: state.elapsed,
     phase: state.phase,
-    court: { ...COURT },
+    court: { ...COURT, ballSpeed: state.ballSpeed },
     ball: { ...state.ball },
     paddles: { ...state.paddles },
     score: { ...state.score },

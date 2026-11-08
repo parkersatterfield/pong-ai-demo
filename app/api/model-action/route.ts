@@ -1,4 +1,4 @@
-import { COURT } from "@/lib/game";
+import { BALL_SPEED, COURT } from "@/lib/game";
 import { MODEL_REQUEST_TIMEOUT_MS, type ModelObservation } from "@/lib/model-controller";
 import { getModelController } from "@/lib/server/model-registry";
 import { ModelError } from "@/lib/model-error";
@@ -12,6 +12,8 @@ function hasNumbers<K extends string>(value: unknown, keys: K[]): value is Recor
 function parseObservation(value: unknown): ModelObservation | null {
   if (!value || typeof value !== "object" || !("phase" in value) || value.phase !== "playing" ||
     !hasNumbers(value, ["elapsed", "serveIn"]) ||
+    !("court" in value) || !hasNumbers(value.court, ["ballSpeed"]) ||
+    value.court.ballSpeed < BALL_SPEED.min || value.court.ballSpeed > BALL_SPEED.max ||
     !("ball" in value) || !hasNumbers(value.ball, ["x", "y", "vx", "vy"]) ||
     !("paddles" in value) || !hasNumbers(value.paddles, ["left", "right"]) ||
     !("score" in value) || !hasNumbers(value.score, ["left", "right"])) return null;
@@ -23,7 +25,7 @@ function parseObservation(value: unknown): ModelObservation | null {
     ball: { x: value.ball.x, y: value.ball.y, vx: value.ball.vx, vy: value.ball.vy },
     paddles: { left: value.paddles.left, right: value.paddles.right },
     score: { left: value.score.left, right: value.score.right },
-    court: COURT,
+    court: { ...COURT, ballSpeed: value.court.ballSpeed },
   };
 }
 

@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type PointerEvent } from "react";
-import { COURT, clampPaddle, createGame, stepGame, type PaddleAction } from "@/lib/game";
-import { MODELS, getModelObservation } from "@/lib/model-controller";
+import { BALL_SPEED, COURT, clampPaddle, createGame, setBallSpeed, stepGame, type PaddleAction } from "@/lib/game";
+import { MODELS, MODEL_DECISION_INTERVAL_MS, getModelObservation } from "@/lib/model-controller";
 import { createRemoteController } from "@/lib/request-model-action";
 import { runModelController, type ModelRetryState } from "@/lib/run-model-controller";
 
@@ -40,7 +40,7 @@ export default function PongGame() {
     setModelNotice(null);
     const current = game.current;
     if (current.phase !== "playing") resetRetryBudget(modelId);
-    if (current.phase === "finished") game.current = createGame();
+    if (current.phase === "finished") game.current = createGame(current.ballSpeed);
     game.current = { ...game.current, phase: current.phase === "playing" ? "paused" : "playing" };
     setView(game.current);
   }
@@ -50,7 +50,7 @@ export default function PongGame() {
     setModelError(null);
     setModelNotice(null);
     resetRetryBudget(modelId);
-    game.current = createGame();
+    game.current = createGame(game.current.ballSpeed);
     pointerY.current = null;
     keys.current.clear();
     setView(game.current);
@@ -74,7 +74,7 @@ export default function PongGame() {
     });
     modelSession.current = stop;
     return stop;
-  }, [modelId, view.phase, view.score.left, view.score.right]);
+  }, [modelId, view.phase, view.score.left, view.score.right, view.ballSpeed]);
 
   useEffect(() => {
     let frame: number;
@@ -94,7 +94,7 @@ export default function PongGame() {
         const previousScore = game.current.score;
         game.current = stepGame(game.current, {
           left: up === down ? "stay" : up ? "up" : "down",
-          right: game.current.ball.vx > 0 && game.current.serveIn === 0 ? modelAction.current : "stay",
+          right: game.current.serveIn === 0 ? modelAction.current : "stay",
         }, STEP);
         if (game.current.score !== previousScore) {
           modelSession.current?.();
@@ -156,6 +156,22 @@ export default function PongGame() {
           <option value="">Disabled (stationary paddle)</option>
           {MODELS.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
         </select>
+        <div className="speed-setting">
+          <label htmlFor="ball-speed">Ball speed</label>
+          <input id="ball-speed" type="range" min={BALL_SPEED.min} max={BALL_SPEED.max} step={BALL_SPEED.step}
+            value={view.ballSpeed} aria-valuetext={`${view.ballSpeed} court units per second`}
+            onChange={(event) => {
+              stopModel();
+              setModelNotice(null);
+              game.current = setBallSpeed(game.current, Number(event.target.value));
+              setView(game.current);
+            }} />
+          <output htmlFor="ball-speed">{view.ballSpeed} units/sec</output>
+        </div>
+        <p className="decision-rate">
+          {modelId ? `Up to ${1000 / MODEL_DECISION_INTERVAL_MS} decisions/sec · ${MODEL_DECISION_INTERVAL_MS} ms interval` : "Model decisions disabled"}
+          {modelId && <span>While playing, in either ball direction; backoff may reduce the rate.</span>}
+        </p>
       </div>
 
       <section className="arena" aria-label="Pong game">

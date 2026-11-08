@@ -1,7 +1,8 @@
 import "server-only";
 
-import { MODEL_ACTION_MS, isPaddleAction, type ModelController } from "../model-controller";
+import { isPaddleAction, type ModelController } from "../model-controller";
 import { ModelError } from "../model-error";
+import { getPaddleDecisionInput } from "../paddle-decision";
 
 function retryAfterMs(value: string | null): number | undefined {
   if (!value?.trim()) return undefined;
@@ -40,6 +41,9 @@ async function readAPIError(response: Response): Promise<ModelError> {
 
 export function createOpenAIController(model: string): ModelController {
   return async (observation, signal) => {
+    const input = getPaddleDecisionInput(observation);
+    if (!input) return "stay";
+
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) throw new ModelError("Set OPENAI_API_KEY in .env.local and restart the server.", 503);
 
@@ -50,11 +54,11 @@ export function createOpenAIController(model: string): ModelController {
       signal,
       body: JSON.stringify({
         model,
-        input: [{ role: "user", content: [{ type: "input_json", data: observation }] }],
+        input: [{ role: "user", content: [{ type: "input_json", data: input }] }],
         questions: [{
           type: "choice",
           name: "paddle_action",
-          instructions: `Control the right paddle in Pong. Choose the movement most likely to return the ball. Coordinates start at the top left, positive Y is down, paddle positions are their vertical centers, and velocities are court units per second. Account for the ball's velocity and wall bounces. The chosen action lasts at most ${MODEL_ACTION_MS} milliseconds. During a serve, prepare for the next ball.`,
+          instructions: "Choose the right paddle's next action. Y increases downward; times are milliseconds. When ballArrival is present, it predicts contact with the paddle, including wall bounces. A hit requires the paddle center to be within hitToleranceY of ballArrival.centerY. When ballArrival is null, there is no upcoming right-paddle contact; choose an action to recover toward recoveryCenterY. paddleCenterAfterAction gives each action's resulting center after actionDurationMs, or at contact if sooner, including paddle limits. The paddle then holds until another decision; decisionIntervalMs is the minimum request interval, and latency/backoff may delay it. Prefer stay when it already covers the predicted contact, or is at the recovery target. Otherwise choose the action whose resulting center is closest to the target. Predictions assume unchanged ball speed and immediate action from this snapshot; no request latency is included.",
           choices: [
             { value: "up", description: "Move the right paddle toward the top of the court." },
             { value: "down", description: "Move the right paddle toward the bottom of the court." },

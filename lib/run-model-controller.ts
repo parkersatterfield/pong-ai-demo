@@ -19,8 +19,8 @@ export interface ModelRetryState {
   nextRequestAt: number;
 }
 
-function ballIsApproaching(observation: ModelObservation) {
-  return observation.phase === "playing" && observation.serveIn === 0 && observation.ball.vx > 0;
+function canDecide(observation: ModelObservation) {
+  return observation.phase === "playing" && observation.serveIn === 0;
 }
 
 // Retry state belongs to the selected model and survives rally/session cancellation.
@@ -60,7 +60,7 @@ export function runModelController({ controller, observe, onAction, onStatus, on
       return;
     }
     const observation = observe();
-    if (!ballIsApproaching(observation)) {
+    if (!canDecide(observation)) {
       stay();
       nextDecision = setTimeout(decide, IDLE_CHECK_MS);
       return;
@@ -76,7 +76,7 @@ export function runModelController({ controller, observe, onAction, onStatus, on
       if (session.signal.aborted) return;
       retry.failures = 0;
       retry.startedAt = null;
-      if (!ballIsApproaching(observe())) {
+      if (!canDecide(observe())) {
         stay();
         onStatus(null);
       } else if (performance.now() - started > MODEL_OBSERVATION_MAX_AGE_MS) {

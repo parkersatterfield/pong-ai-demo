@@ -6,15 +6,18 @@ export const COURT = {
   paddleInset: 32,
   paddleSpeed: 440,
   ballRadius: 7,
-  ballSpeed: 360,
+  ballSpeed: 240,
   winningScore: 7,
 } as const;
+
+export const BALL_SPEED = { min: 100, max: 480, step: 20 } as const;
 
 export type PaddleAction = "up" | "down" | "stay";
 export type GamePhase = "ready" | "playing" | "paused" | "finished";
 export type Side = "left" | "right";
 
 export interface GameState {
+  ballSpeed: number;
   phase: GamePhase;
   elapsed: number;
   paddles: Record<Side, number>;
@@ -23,23 +26,34 @@ export interface GameState {
   serveIn: number;
 }
 
-function serve(direction: number) {
+function serve(direction: number, speed: number) {
+  const angle = Math.atan(0.35);
   return {
     x: COURT.width / 2,
     y: COURT.height / 2,
-    vx: direction * COURT.ballSpeed,
-    vy: COURT.ballSpeed * 0.35,
+    vx: direction * speed * Math.cos(angle),
+    vy: speed * Math.sin(angle),
   };
 }
 
-export function createGame(): GameState {
+export function createGame(ballSpeed: number = COURT.ballSpeed): GameState {
   return {
+    ballSpeed,
     phase: "ready",
     elapsed: 0,
     paddles: { left: COURT.height / 2, right: COURT.height / 2 },
-    ball: serve(-1),
+    ball: serve(-1, ballSpeed),
     score: { left: 0, right: 0 },
     serveIn: 0.8,
+  };
+}
+
+export function setBallSpeed(state: GameState, ballSpeed: number): GameState {
+  const scale = ballSpeed / Math.hypot(state.ball.vx, state.ball.vy);
+  return {
+    ...state,
+    ballSpeed,
+    ball: { ...state.ball, vx: state.ball.vx * scale, vy: state.ball.vy * scale },
   };
 }
 
@@ -86,8 +100,8 @@ export function stepGame(
     const offset = Math.max(-1, Math.min(1, (ball.y - paddles[side]) / (COURT.paddleHeight / 2)));
     const angle = offset * Math.PI / 3;
     ball.x = face + (side === "left" ? radius : -radius);
-    ball.vx = (side === "left" ? 1 : -1) * COURT.ballSpeed * Math.cos(angle);
-    ball.vy = COURT.ballSpeed * Math.sin(angle);
+    ball.vx = (side === "left" ? 1 : -1) * state.ballSpeed * Math.cos(angle);
+    ball.vy = state.ballSpeed * Math.sin(angle);
   }
 
   if (ball.x < -radius || ball.x > COURT.width + radius) {
@@ -98,7 +112,7 @@ export function stepGame(
       score,
       paddles: { left: COURT.height / 2, right: COURT.height / 2 },
       phase: score[scorer] >= COURT.winningScore ? "finished" : "playing",
-      ball: serve(scorer === "left" ? 1 : -1),
+      ball: serve(scorer === "left" ? 1 : -1, state.ballSpeed),
       serveIn: 0.8,
     };
   }
