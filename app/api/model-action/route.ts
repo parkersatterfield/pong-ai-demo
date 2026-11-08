@@ -52,8 +52,8 @@ export async function POST(request: Request) {
 
   const signal = AbortSignal.any([request.signal, AbortSignal.timeout(MODEL_REQUEST_TIMEOUT_MS)]);
   try {
-    const action = await controller(observation, signal);
-    return Response.json({ action }, { headers: { "Cache-Control": "no-store" } });
+    const decision = await controller(observation, signal);
+    return Response.json(decision, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (error instanceof ModelError) {
       return Response.json({ error: error.message, details: error.details }, {

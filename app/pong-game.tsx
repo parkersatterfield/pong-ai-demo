@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type PointerEvent } from "react";
-import { BALL_SPEED, COURT, clampPaddle, createGame, setBallSpeed, stepGame, type PaddleAction } from "@/lib/game";
+import { BALL_SPEED, COURT, clampPaddle, createGame, setBallSpeed, stepGame } from "@/lib/game";
 import { MODELS, MODEL_DECISION_INTERVAL_MS, getModelObservation } from "@/lib/model-controller";
 import { createRemoteController } from "@/lib/request-model-action";
 import { runModelController, type ModelRetryState } from "@/lib/run-model-controller";
@@ -14,7 +14,7 @@ export default function PongGame() {
   const court = useRef<SVGSVGElement>(null);
   const keys = useRef(new Set<string>());
   const pointerY = useRef<number | null>(null);
-  const modelAction = useRef<PaddleAction>("stay");
+  const modelTargetY = useRef<number | null>(null);
   const modelSession = useRef<(() => void) | null>(null);
   const modelRetries = useRef<Record<string, ModelRetryState>>({});
   const [modelId, setModelId] = useState<string>(MODELS[0].id);
@@ -31,7 +31,7 @@ export default function PongGame() {
 
   function stopModel() {
     modelSession.current?.();
-    modelAction.current = "stay";
+    modelTargetY.current = null;
   }
 
   function togglePlay() {
@@ -63,7 +63,7 @@ export default function PongGame() {
     const stop = runModelController({
       controller: createRemoteController(modelId),
       observe: () => getModelObservation(game.current),
-      onAction: (action) => { modelAction.current = action; },
+      onTarget: (targetY) => { modelTargetY.current = targetY; },
       onStatus: setModelNotice,
       retry,
       onError: (message) => {
@@ -94,7 +94,7 @@ export default function PongGame() {
         const previousScore = game.current.score;
         game.current = stepGame(game.current, {
           left: up === down ? "stay" : up ? "up" : "down",
-          right: game.current.serveIn === 0 ? modelAction.current : "stay",
+          right: game.current.serveIn === 0 ? modelTargetY.current : null,
         }, STEP);
         if (game.current.score !== previousScore) {
           modelSession.current?.();

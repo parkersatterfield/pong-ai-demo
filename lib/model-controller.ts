@@ -1,4 +1,4 @@
-import { COURT, type GameState, type PaddleAction } from "./game";
+import { COURT, type GameState } from "./game";
 
 // The model controls the right paddle. Positive Y points down.
 export interface ModelObservation {
@@ -11,7 +11,12 @@ export interface ModelObservation {
   serveIn: number;
 }
 
-export const MODEL_ACTION_MS = 200;
+export interface ModelDecision { targetY: number }
+
+// Include both limits and the exact center of the legal paddle-center range.
+export const MODEL_TARGETS = Array.from({ length: 33 }, (_, index) =>
+  Math.round((COURT.paddleHeight / 2 + (COURT.height - COURT.paddleHeight) * index / 32) * 100) / 100,
+);
 export const MODEL_REQUEST_TIMEOUT_MS = 1000;
 export const MODEL_DECISION_INTERVAL_MS = 500;
 export const MODEL_OBSERVATION_MAX_AGE_MS = 500;
@@ -25,10 +30,12 @@ export const MODELS = [
 export type ModelController = (
   observation: ModelObservation,
   signal: AbortSignal,
-) => Promise<PaddleAction>;
+) => Promise<ModelDecision>;
 
-export function isPaddleAction(value: unknown): value is PaddleAction {
-  return value === "up" || value === "down" || value === "stay";
+export function isModelDecision(value: unknown): value is ModelDecision {
+  return value !== null && typeof value === "object" && "targetY" in value &&
+    typeof value.targetY === "number" && Number.isFinite(value.targetY) &&
+    value.targetY >= COURT.paddleHeight / 2 && value.targetY <= COURT.height - COURT.paddleHeight / 2;
 }
 
 export function getModelObservation(state: GameState): ModelObservation {

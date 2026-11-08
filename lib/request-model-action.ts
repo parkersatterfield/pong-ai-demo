@@ -1,4 +1,4 @@
-import { isPaddleAction, type ModelController } from "./model-controller";
+import { isModelDecision, type ModelController } from "./model-controller";
 import { ModelError, type ModelErrorDetails } from "./model-error";
 
 export function createRemoteController(modelId: string): ModelController {
@@ -9,13 +9,13 @@ export function createRemoteController(modelId: string): ModelController {
       signal,
       body: JSON.stringify({ modelId, observation }),
     });
-    const result: { error?: string; details?: ModelErrorDetails; action?: unknown } = await response.json();
+    const result: { error?: string; details?: ModelErrorDetails; targetY?: unknown } = await response.json();
     if (!response.ok) {
       throw new ModelError(result.error ?? "Model request failed.", response.status, result.details);
     }
-    if (!isPaddleAction(result.action)) {
-      throw new Error("The server returned an invalid paddle action.");
+    if (!isModelDecision(result)) {
+      throw new Error("The server returned an invalid paddle target.");
     }
-    return result.action;
+    return { targetY: result.targetY };
   };
 }

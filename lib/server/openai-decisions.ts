@@ -1,6 +1,6 @@
 import "server-only";
 
-import { isPaddleAction, type ModelController } from "../model-controller";
+import { MODEL_TARGETS, type ModelController } from "../model-controller";
 import { ModelError } from "../model-error";
 import { getPaddleDecisionInput } from "../paddle-decision";
 
@@ -42,7 +42,7 @@ async function readAPIError(response: Response): Promise<ModelError> {
 export function createOpenAIController(model: string): ModelController {
   return async (observation, signal) => {
     const input = getPaddleDecisionInput(observation);
-    if (!input) return "stay";
+    if (!input) return { targetY: observation.paddles.right };
 
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) throw new ModelError("Set OPENAI_API_KEY in .env.local and restart the server.", 503);
@@ -57,13 +57,9 @@ export function createOpenAIController(model: string): ModelController {
         input: [{ role: "user", content: [{ type: "input_json", data: input }] }],
         questions: [{
           type: "choice",
-          name: "paddle_action",
-          instructions: "Choose the right paddle's next action. Y increases downward; times are milliseconds. When ballArrival is present, it predicts contact with the paddle, including wall bounces. A hit requires the paddle center to be within hitToleranceY of ballArrival.centerY. When ballArrival is null, there is no upcoming right-paddle contact; choose an action to recover toward recoveryCenterY. paddleCenterAfterAction gives each action's resulting center after actionDurationMs, or at contact if sooner, including paddle limits. The paddle then holds until another decision; decisionIntervalMs is the minimum request interval, and latency/backoff may delay it. Prefer stay when it already covers the predicted contact, or is at the recovery target. Otherwise choose the action whose resulting center is closest to the target. Predictions assume unchanged ball speed and immediate action from this snapshot; no request latency is included.",
-          choices: [
-            { value: "up", description: "Move the right paddle toward the top of the court." },
-            { value: "down", description: "Move the right paddle toward the bottom of the court." },
-            { value: "stay", description: "Hold the right paddle in its current position." },
-          ],
+          name: "paddle_target",
+          instructions: "Choose the right paddle center Y from the available targets. Coordinates start at the top left; positive Y is down. Positions are court units, velocities and paddle speed are units/second, and times are milliseconds. Use intercept.centerY as the desired center when intercept is present; it includes wall bounces. Negative targetOffsetY means above the current paddle, positive means below. Choose the available target closest to the desired center. If intercept is null, choose the target closest to recoveryCenterY. The game moves continuously toward your target at paddle.speed and stops there without overshooting. The target persists between requests until replaced or the session stops. Do not limit movement to one decision interval. Predictions assume unchanged ball speed and exclude request latency.",
+          choices: MODEL_TARGETS.map((targetY) => ({ value: String(targetY), description: `Paddle center Y = ${targetY}` })),
         }],
       }),
     });
@@ -73,11 +69,13 @@ export function createOpenAIController(model: string): ModelController {
     const result: unknown = await response.json();
     const answers = result && typeof result === "object" && "answers" in result ? result.answers : null;
     const answer: unknown = Array.isArray(answers)
-      ? answers.find((item) => item?.name === "paddle_action" && item?.type === "choice")
+      ? answers.find((item) => item?.name === "paddle_target" && item?.type === "choice")
       : null;
-    if (!answer || typeof answer !== "object" || !("choice" in answer) || !isPaddleAction(answer.choice)) {
-      throw new ModelError("OpenAI Decisions returned an invalid paddle action.", 502);
+    const targetY = answer && typeof answer === "object" && "choice" in answer
+      ? MODEL_TARGETS.find((target) => String(target) === answer.choice) : undefined;
+    if (targetY === undefined) {
+      throw new ModelError("OpenAI Decisions returned an invalid paddle target.", 502);
     }
-    return answer.choice;
+    return { targetY };
   };
 }

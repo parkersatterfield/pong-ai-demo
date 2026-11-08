@@ -65,15 +65,18 @@ export function clampPaddle(y: number) {
 // The caller advances the simulation using fixed, small time steps.
 export function stepGame(
   state: GameState,
-  actions: Record<Side, PaddleAction>,
+  actions: { left: PaddleAction; right: number | null },
   dt: number,
 ): GameState {
   if (state.phase !== "playing") return state;
 
-  const move = (side: Side) => clampPaddle(
-    state.paddles[side] + (actions[side] === "up" ? -1 : actions[side] === "down" ? 1 : 0) * COURT.paddleSpeed * dt,
-  );
-  const paddles = { left: move("left"), right: move("right") };
+  const distance = COURT.paddleSpeed * dt;
+  const paddles = {
+    left: clampPaddle(state.paddles.left + (actions.left === "up" ? -1 : actions.left === "down" ? 1 : 0) * distance),
+    right: actions.right === null ? state.paddles.right : clampPaddle(
+      state.paddles.right + Math.max(-distance, Math.min(distance, actions.right - state.paddles.right)),
+    ),
+  };
   const next = { ...state, paddles, elapsed: state.elapsed + dt };
 
   if (state.serveIn > 0) {

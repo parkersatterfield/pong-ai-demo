@@ -1,5 +1,4 @@
 import {
-  MODEL_ACTION_MS,
   MODEL_DECISION_INTERVAL_MS,
   MODEL_REQUEST_TIMEOUT_MS,
   MODEL_OBSERVATION_MAX_AGE_MS,
@@ -7,7 +6,6 @@ import {
   type ModelObservation,
 } from "./model-controller";
 import { ModelError } from "./model-error";
-import type { PaddleAction } from "./game";
 
 const IDLE_CHECK_MS = 100;
 const MAX_RETRIES = 3;
@@ -24,21 +22,19 @@ function canDecide(observation: ModelObservation) {
 }
 
 // Retry state belongs to the selected model and survives rally/session cancellation.
-export function runModelController({ controller, observe, onAction, onStatus, onError, retry }: {
+export function runModelController({ controller, observe, onTarget, onStatus, onError, retry }: {
   controller: ModelController;
   observe: () => ModelObservation;
-  onAction: (action: PaddleAction) => void;
+  onTarget: (targetY: number | null) => void;
   onStatus: (message: string | null) => void;
   onError: (message: string) => void;
   retry: ModelRetryState;
 }) {
   const session = new AbortController();
   let nextDecision: ReturnType<typeof setTimeout>;
-  let actionExpiry: ReturnType<typeof setTimeout>;
 
   function stay() {
-    clearTimeout(actionExpiry);
-    onAction("stay");
+    onTarget(null);
   }
 
   function stop() {
@@ -72,7 +68,7 @@ export function runModelController({ controller, observe, onAction, onStatus, on
       : Math.min(MODEL_REQUEST_TIMEOUT_MS, MAX_RETRY_MS - (Date.now() - retry.startedAt));
     const signal = AbortSignal.any([session.signal, AbortSignal.timeout(Math.max(1, attemptTimeout))]);
     try {
-      const action = await controller(observation, signal);
+      const decision = await controller(observation, signal);
       if (session.signal.aborted) return;
       retry.failures = 0;
       retry.startedAt = null;
@@ -80,12 +76,9 @@ export function runModelController({ controller, observe, onAction, onStatus, on
         stay();
         onStatus(null);
       } else if (performance.now() - started > MODEL_OBSERVATION_MAX_AGE_MS) {
-        stay();
-        onStatus("Stale model decision discarded; waiting for the next decision.");
+        onStatus("Stale model decision discarded; retaining the previous target.");
       } else {
-        clearTimeout(actionExpiry);
-        onAction(action);
-        actionExpiry = setTimeout(stay, MODEL_ACTION_MS);
+        onTarget(decision.targetY);
         onStatus(null);
       }
     } catch (error) {
