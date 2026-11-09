@@ -43,7 +43,7 @@ Choose the paddle-center target closest to interceptY; it includes wall reflecti
 
 ### Experiment: no yIntercept
 
-Each provider also has a **no yIntercept** option. These options use the same models, nine physical destinations, 500 ms request interval, and paddle speed limits as the original options. They send normalized current state and explicit physics rules without calculating or sending an intercept, predicted bounces, or future ball positions.
+Each provider also has a **no yIntercept** option. These options use the same models, nine physical destinations, 250 ms request interval, and paddle speed limits as the original options. They send normalized current state and explicit physics rules without calculating or sending an intercept, predicted bounces, or future ball positions.
 
 All lengths and velocities use one scale factor, `100 / court.height`, rounded to two decimal places. Court height becomes 100 while angles and travel times are preserved apart from rounding. For the same example above, the provider input is:
 
@@ -65,6 +65,8 @@ All lengths and velocities use one scale factor, `100 / court.height`, rounded t
 The no-intercept prompt uses language-based guidance: move early, lead a diagonal shot, consider wall reversals, cover the current ball height when close, and recover toward center when the ball travels away or has passed. It explains that a distant destination keeps the paddle moving without selecting intermediate steps. Choices use names such as **Above center**, with descriptions such as **Move up to Above center**, based on the paddle's current position. Normalized numeric destinations remain in the descriptions for finer detail. The adapter maps each selected name back to the original court-unit destination; the browser continues to display targets in court units.
 
 This experiment includes no observation history, active target, or measured latency. Compare the options at the same difficulty; improvement in play is an experimental outcome, not an assumed property of the new representation.
+
+The latest prompt experiment emphasizes paddle travel time: commit to an expected arrival position while the ball is still far away and approaching, because waiting can make a correct destination unreachable. Only the no-intercept instructions change; the payload, target choices, and 250 ms interval stay fixed.
 
 ### Provider requests
 
@@ -139,7 +141,7 @@ export type ModelController = (
 ) => Promise<ModelDecision>;
 ```
 
-[`runModelController`](lib/run-model-controller.ts) allows at most one request in flight per session, starting requests no more often than every 500 ms. It requests decisions during active play after the serve delay, in either ball direction. The latest target stays active while a new request is pending; it has no timed expiry.
+[`runModelController`](lib/run-model-controller.ts) allows at most one request in flight per session, starting requests no more often than every 250 ms (up to four decisions per second). Slower responses and retry backoff reduce the actual rate. The stale-response cutoff remains 500 ms. It requests decisions during active play after the serve delay, in either ball direction. The latest target stays active while a new request is pending; it has no timed expiry.
 
 ### Code map
 

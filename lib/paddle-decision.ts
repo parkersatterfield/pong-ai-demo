@@ -45,7 +45,7 @@ export function getPaddleDecisionInput(observation: ModelObservation): PaddleDec
 const SPATIAL_TARGET_INSTRUCTIONS = [
   "You control the right paddle. Choose one destination to return the ball.",
   "Use the named height bands, directions, and relative positions first; numbers provide finer detail. Height bands describe current positions, not future landing positions.",
-  "When the ball comes toward you, move early toward where you expect it to arrive. For a mostly horizontal shot, favor its current height. For a diagonal shot, allow for its upward or downward travel before it reaches you.",
+  "Your paddle needs time to travel. When the ball is far away and approaching, commit early to where you expect it to arrive. Waiting until it is near your paddle can make a correct destination unreachable. Choose a destination you can move toward now, rather than following the ball's current height as it travels. For a mostly horizontal shot, favor its current height. For a diagonal shot, allow for its upward or downward travel before it reaches you.",
   "Top and bottom wall bounces reverse up/down motion. Consider whether the ball reaches a wall before your paddle; do not keep aiming upward after an observed downward bounce, or downward after an upward bounce.",
   "When the ball is near your paddle, prioritize covering its height now. If it is above or below your reach, choose a destination that moves toward it. When the ball travels away or has passed your paddle, recover toward Center.",
   "Choose the destination, not a small movement step. A distant destination keeps the paddle moving at full speed until it arrives; you need not select each intermediate band. It cannot teleport. Each new choice replaces the previous destination.",
