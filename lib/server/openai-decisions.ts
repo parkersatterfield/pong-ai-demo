@@ -1,8 +1,8 @@
 import "server-only";
 
-import { MODEL_TARGETS, type ModelController } from "../model-controller";
+import type { ModelController, PaddleInputMode } from "../model-controller";
 import { ModelError } from "../model-error";
-import { getPaddleDecisionInput, PADDLE_TARGET_INSTRUCTIONS } from "../paddle-decision";
+import { getPaddleDecisionPrompt } from "../paddle-decision";
 import { isRecord } from "../validation";
 import { getErrorDiagnostics, requestDecision, type ProviderDiagnostics } from "./decision-request";
 
@@ -29,22 +29,22 @@ async function readAPIError(response: Response): Promise<ModelError> {
   });
 }
 
-export function createOpenAIController(model: string, diagnostics: ProviderDiagnostics = {}): ModelController {
+export function createOpenAIController(model: string, diagnostics: ProviderDiagnostics, inputMode: PaddleInputMode): ModelController {
   return async (observation, signal) => {
-    const input = getPaddleDecisionInput(observation);
-    if (!input) return { targetY: observation.paddles.right };
+    const prompt = getPaddleDecisionPrompt(observation, inputMode);
+    if (!prompt) return { targetY: observation.paddles.right };
 
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) throw new ModelError("Set OPENAI_API_KEY in .env.local and restart the server.", 503);
 
     const { response, result } = await requestDecision("https://api.openai.com/v1/decisions", apiKey, {
       model,
-      input: [{ role: "user", content: [{ type: "input_json", data: input }] }],
+      input: [{ role: "user", content: [{ type: "input_json", data: prompt.input }] }],
       questions: [{
         type: "choice",
         name: "paddle_target",
-        instructions: PADDLE_TARGET_INSTRUCTIONS,
-        choices: MODEL_TARGETS.map((targetY) => ({ value: String(targetY), description: `Paddle center Y = ${targetY}` })),
+        instructions: prompt.instructions,
+        choices: prompt.choices.map(({ value, description }) => ({ value, description })),
       }],
     }, signal, diagnostics);
 
@@ -55,7 +55,7 @@ export function createOpenAIController(model: string, diagnostics: ProviderDiagn
       ? answers.find((item) => isRecord(item) && item.name === "paddle_target" && item.type === "choice")
       : null;
     const targetY = isRecord(answer)
-      ? MODEL_TARGETS.find((target) => String(target) === answer.choice) : undefined;
+      ? prompt.choices.find(({ value }) => value === answer.choice)?.targetY : undefined;
     if (targetY === undefined) {
       throw new ModelError("OpenAI Decisions returned an invalid paddle target.", 502);
     }
