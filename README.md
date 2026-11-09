@@ -52,15 +52,19 @@ All lengths and velocities use one scale factor, `100 / court.height`, rounded t
   "court": { "width": 177.78, "height": 100 },
   "ball": {
     "x": 88.89, "y": 50, "vx": 66.67, "vy": 50, "radius": 1.3,
-    "horizontalDirection": "toward you", "verticalDirection": "down"
+    "horizontalDirection": "toward you", "verticalDirection": "down",
+    "heightBand": "Center", "relativeToPaddle": "within your paddle's vertical reach",
+    "horizontalPosition": "your half", "slope": "diagonal"
   },
-  "paddle": { "centerY": 50, "height": 16.3, "speed": 81.48, "ballContactX": 168.33 }
+  "paddle": { "centerY": 50, "height": 16.3, "speed": 81.48, "ballContactX": 168.33, "heightBand": "Center" }
 }
 ```
 
-`ballContactX` is static geometry: the ball-center X at contact with the right paddle. Direction names describe the current velocity signs. Instructions explain the coordinate system, constant motion between collisions, wall reflections, paddle movement limits, and recovery when the ball travels away. Target choices use normalized Y values and spatial descriptions such as **Above center**; the adapter maps the chosen value back to its original court-unit destination. The browser continues to display targets in court units.
+`ballContactX` is static geometry: the ball-center X at contact with the right paddle. Direction names describe the current velocity signs. Height bands name the closest of the nine destinations to the ball's or paddle's current Y. Relative reach includes paddle half-height plus ball radius; it describes vertical overlap now, not whether a return will succeed. Horizontal position distinguishes the opponent half, your half, the final sixth of court width near your paddle, and a ball past the contact plane. Slope is **mostly horizontal** when vertical speed is at most half horizontal speed, **steep diagonal** when it exceeds 1.5 times horizontal speed, and **diagonal** otherwise. None of these cues projects the ball forward.
 
-This first experiment includes no observation history, active target, or measured latency. Compare the options at the same difficulty; improvement in play is an experimental outcome, not an assumed property of the new representation.
+The no-intercept prompt uses language-based guidance: move early, lead a diagonal shot, consider wall reversals, cover the current ball height when close, and recover toward center when the ball travels away or has passed. It explains that a distant destination keeps the paddle moving without selecting intermediate steps. Choices use names such as **Above center**, with descriptions such as **Move up to Above center**, based on the paddle's current position. Normalized numeric destinations remain in the descriptions for finer detail. The adapter maps each selected name back to the original court-unit destination; the browser continues to display targets in court units.
+
+This experiment includes no observation history, active target, or measured latency. Compare the options at the same difficulty; improvement in play is an experimental outcome, not an assumed property of the new representation.
 
 ### Provider requests
 

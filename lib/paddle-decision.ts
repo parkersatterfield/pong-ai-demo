@@ -42,9 +42,23 @@ export function getPaddleDecisionInput(observation: ModelObservation): PaddleDec
   };
 }
 
-const SPATIAL_TARGET_INSTRUCTIONS = "You control the right paddle. All lengths use the same scale: court height is 100. Coordinates start at the upper left; Y increases downward. Velocities are units per second. The ball travels straight between collisions. Top and bottom wall collisions reverse vy; the ball center stays between radius and court.height minus radius. ballContactX is the ball-center X at contact with your paddle. Choose the paddle-center destination most likely to return the incoming ball, accounting for wall bounces. The paddle moves at paddle.speed and stops at the selected destination; it cannot teleport. Its center must remain between half its height and court.height minus half its height. When the ball travels away, choose a recovery position. A hit on the other paddle changes the ball velocity.";
+const SPATIAL_TARGET_INSTRUCTIONS = [
+  "You control the right paddle. Choose one destination to return the ball.",
+  "Use the named height bands, directions, and relative positions first; numbers provide finer detail. Height bands describe current positions, not future landing positions.",
+  "When the ball comes toward you, move early toward where you expect it to arrive. For a mostly horizontal shot, favor its current height. For a diagonal shot, allow for its upward or downward travel before it reaches you.",
+  "Top and bottom wall bounces reverse up/down motion. Consider whether the ball reaches a wall before your paddle; do not keep aiming upward after an observed downward bounce, or downward after an upward bounce.",
+  "When the ball is near your paddle, prioritize covering its height now. If it is above or below your reach, choose a destination that moves toward it. When the ball travels away or has passed your paddle, recover toward Center.",
+  "Choose the destination, not a small movement step. A distant destination keeps the paddle moving at full speed until it arrives; you need not select each intermediate band. It cannot teleport. Each new choice replaces the previous destination.",
+  "Court height is 100; all lengths share one scale. Origin is upper left; Y increases downward. Velocities are units per second. The ball travels straight between collisions; wall contact is at radius or court.height minus radius. ballContactX is its center X at your paddle. Other-paddle hits change velocity.",
+].join(" ");
 
 const TARGET_LABELS = ["Top", "Near top", "Upper quarter", "Above center", "Center", "Below center", "Lower quarter", "Near bottom", "Bottom"];
+
+function describeHeight(y: number) {
+  const index = MODEL_TARGETS.reduce((nearest, target, index) =>
+    Math.abs(target - y) < Math.abs(MODEL_TARGETS[nearest] - y) ? index : nearest, 0);
+  return TARGET_LABELS[index];
+}
 
 export function getPaddleDecisionPrompt(observation: ModelObservation, inputMode: PaddleInputMode) {
   if (observation.phase !== "playing" || observation.serveIn > 0) return null;
@@ -59,10 +73,18 @@ export function getPaddleDecisionPrompt(observation: ModelObservation, inputMode
       radius: normalize(court.ballRadius),
       horizontalDirection: ball.vx > 0 ? "toward you" : "away from you",
       verticalDirection: ball.vy < 0 ? "up" : ball.vy > 0 ? "down" : "level",
+      heightBand: describeHeight(ball.y),
+      relativeToPaddle: Math.abs(ball.y - paddles.right) <= court.paddleHeight / 2 + court.ballRadius
+        ? "within your paddle's vertical reach" : ball.y < paddles.right ? "above your paddle's reach" : "below your paddle's reach",
+      horizontalPosition: ball.x > court.width - court.paddleInset - court.paddleWidth - court.ballRadius
+        ? "past your paddle" : ball.x >= court.width * 5 / 6 ? "near your paddle" : ball.x >= court.width / 2 ? "your half" : "opponent half",
+      slope: Math.abs(ball.vy) <= Math.abs(ball.vx) / 2 ? "mostly horizontal"
+        : Math.abs(ball.vy) > Math.abs(ball.vx) * 1.5 ? "steep diagonal" : "diagonal",
     },
     paddle: {
       centerY: normalize(paddles.right), height: normalize(court.paddleHeight), speed: normalize(court.paddleSpeed),
       ballContactX: normalize(court.width - court.paddleInset - court.paddleWidth - court.ballRadius),
+      heightBand: describeHeight(paddles.right),
     },
   };
 
@@ -71,8 +93,9 @@ export function getPaddleDecisionPrompt(observation: ModelObservation, inputMode
     instructions: inputMode === "intercept" ? PADDLE_TARGET_INSTRUCTIONS : SPATIAL_TARGET_INSTRUCTIONS,
     choices: MODEL_TARGETS.map((targetY, index) => ({
       targetY,
-      value: String(inputMode === "intercept" ? targetY : normalize(targetY)),
-      description: inputMode === "intercept" ? `Paddle center Y = ${targetY}` : `${TARGET_LABELS[index]} — paddle center Y = ${normalize(targetY)}`,
+      value: inputMode === "intercept" ? String(targetY) : TARGET_LABELS[index],
+      description: inputMode === "intercept" ? `Paddle center Y = ${targetY}`
+        : `${targetY < paddles.right ? "Move up to" : targetY > paddles.right ? "Move down to" : "Stay at"} ${TARGET_LABELS[index]} (paddle center Y = ${normalize(targetY)}).`,
     })),
   };
 }
